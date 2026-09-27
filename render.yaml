@@ -3,7 +3,7 @@ services:
     name: qmoosa-exchange-backend
     env: node
     plan: free
-    buildCommand: npm ci && npm run verify
+    buildCommand: npm ci && npm run build && npm run test:smoke
     startCommand: npm start
     healthCheckPath: /health
     autoDeployTrigger: checksPass

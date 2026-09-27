@@ -718,7 +718,7 @@ export default function App() {
     <div className="flex flex-col min-h-screen bg-[#0b0e14] text-[#eaecef]">
       <div role="status" className="p-4 bg-amber-950 text-amber-100 text-sm">
         SANDBOX — simulated trading, AI and reserve displays. No real deposits, withdrawals or x402 settlement.
-        PQC algorithms are demonstrations, not NIST certification. <a href="/sandbox.html" className="underline">Open connected backend dashboard</a>
+        PQC algorithms are demonstrations, not NIST certification. <a href="./sandbox.html" className="underline">Open connected backend dashboard</a>
       </div>
       {/* Top Navigation Bar */}
       <header className="h-14 border-b border-[#1e2329] bg-[#12161f] px-4 flex items-center justify-between z-20">
