@@ -19,6 +19,9 @@ import { KNOWN_TOKENS } from '../hybrid/zeroExTypes.js';
 import { DbAdapter } from '../database/DbAdapter.js';
 import { AuthService } from '../auth/AuthService.js';
 import { CoinGeckoFeed } from '../market/CoinGeckoFeed.js';
+import { X402Gateway } from '../x402/X402Gateway.js';
+import { X402ServiceManager } from '../x402/X402Services.js';
+import { createX402Router } from './x402Adapter.js';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4000;
 
@@ -37,6 +40,17 @@ db.initSchema().catch(err => console.warn('[Database] Schema initialization warn
 // 0x Protocol Hybrid Subsystems
 export const zeroExOrderBook = new ZeroExOrderBook();
 export const hybridRouter = new HybridOrderRouter(engine, zeroExOrderBook);
+
+// x402 Bazaar Protocol Subsystems
+export const x402Gateway = new X402Gateway();
+export const x402ServiceManager = new X402ServiceManager(
+  engine,
+  ledger,
+  porEngine,
+  hybridRouter,
+  zeroExOrderBook,
+  marketFeed
+);
 
 // Register Core Markets
 engine.registerMarket({
@@ -301,6 +315,15 @@ app.use('/api/v3/brokerage', createCoinbaseRouter(engine, ledger));
 const { sraRouter, swapRouter } = createZeroExRouter(zeroExOrderBook, hybridRouter);
 app.use('/orderbook/v1', sraRouter);
 app.use('/swap/v1', swapRouter);
+
+// Attach x402 v2 Bazaar Discovery & API Routers
+app.get('/.well-known/x402-bazaar.json', (_req: Request, res: Response) => {
+  res.json(x402ServiceManager.getBazaarManifest());
+});
+app.get('/.well-known/x402.json', (_req: Request, res: Response) => {
+  res.json(x402ServiceManager.getBazaarManifest());
+});
+app.use('/api/v1/x402', createX402Router(x402Gateway, x402ServiceManager));
 
 // Custody & Proof-of-Reserves REST Endpoints
 app.get('/api/custody/wallets', (req: Request, res: Response) => {
