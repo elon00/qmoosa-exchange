@@ -32,7 +32,7 @@ export class DbAdapter {
       try {
         this.pool = new pg.Pool({
           connectionString: dbUrl,
-          ssl: dbUrl.includes('neon.tech') || dbUrl.includes('sslmode=require') ? { rejectUnauthorized: false } : undefined,
+          ssl: dbUrl.includes('neon.tech') || dbUrl.includes('sslmode=require') ? { rejectUnauthorized: true } : undefined,
           max: 5,
           idleTimeoutMillis: 30000,
           connectionTimeoutMillis: 5000
@@ -103,9 +103,7 @@ export class DbAdapter {
         client.release();
       }
     } catch (err) {
-      console.warn('[DbAdapter] Could not connect to Neon PostgreSQL, utilizing in-memory mode:', err);
-      this.isPostgres = false;
-      this.pool = null;
+      throw err;
     }
   }
 
@@ -118,7 +116,7 @@ export class DbAdapter {
         );
         return user;
       } catch (e) {
-        // Fallback to in-memory on error
+        throw e; // A configured database must never silently lose a write.
       }
     }
 
@@ -144,7 +142,7 @@ export class DbAdapter {
         }
         return null;
       } catch (e) {
-        // Fallback
+        throw e;
       }
     }
 
@@ -168,7 +166,7 @@ export class DbAdapter {
         }
         return null;
       } catch (e) {
-        // Fallback
+        throw e;
       }
     }
 
@@ -187,7 +185,7 @@ export class DbAdapter {
         );
         return;
       } catch (e) {
-        // Fallback
+        throw e;
       }
     }
 
@@ -213,7 +211,7 @@ export class DbAdapter {
         }
         return result;
       } catch (e) {
-        // Fallback
+        throw e;
       }
     }
 
@@ -248,7 +246,7 @@ export class DbAdapter {
         );
         return;
       } catch (e) {
-        // Fallback
+        throw e;
       }
     }
 
@@ -266,7 +264,7 @@ export class DbAdapter {
         );
         return;
       } catch (e) {
-        // Fallback
+        throw e;
       }
     }
 

@@ -25,13 +25,22 @@ export interface MarketFeedResponse {
 }
 
 export class CoinGeckoFeed {
+  constructor(private fetcher: typeof fetch = fetch) {}
+  private inFlight: Promise<MarketFeedResponse> | null = null;
+  private retryAfter = 0;
+  public async getTop100Coins(): Promise<MarketFeedResponse> {
+    if (this.inFlight) return this.inFlight;
+    this.inFlight = this.loadCoins();
+    try { return await this.inFlight; } finally { this.inFlight = null; }
+  }
+
   private cache: CryptoMarketCoin[] | null = null;
   private lastFetchedTime: number = 0;
   // 10 minutes cache TTL (6 calls/hour = 144/day = ~4,464/month, well within 10,000/month free tier)
   private readonly CACHE_TTL_MS: number = 10 * 60 * 1000;
 
   // Implemented trading pairs in Qmoosa Exchange (supports TON/GRAM)
-  private readonly TRADABLE_SYMBOLS = new Set(['TON', 'GRAM', 'BTC', 'ETH', 'SOL', 'USDT']);
+  private readonly TRADABLE_SYMBOLS = new Set(['TON', 'BTC', 'ETH', 'SOL']);
 
   /**
    * Pre-populated fallback dataset covering top 15 cryptocurrencies
@@ -228,7 +237,7 @@ export class CoinGeckoFeed {
   /**
    * Fetch Top 100 cryptocurrencies with in-memory caching
    */
-  public async getTop100Coins(): Promise<MarketFeedResponse> {
+  private async loadCoins(): Promise<MarketFeedResponse> {
     const now = Date.now();
 
     // Check if in-memory cache is still fresh
@@ -245,6 +254,7 @@ export class CoinGeckoFeed {
     }
 
     try {
+      if (now < this.retryAfter) throw new Error('Provider backoff');
       const apiKey = process.env.COINGECKO_API_KEY;
       const headers: Record<string, string> = {
         'Accept': 'application/json',
@@ -257,13 +267,13 @@ export class CoinGeckoFeed {
       const url =
         'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1&sparkline=false&price_change_percentage=24h';
 
-      const response = await fetch(url, { headers, signal: AbortSignal.timeout(6000) });
+      const response = await this.fetcher(url, { headers, signal: AbortSignal.timeout(6000) });
 
       if (response.ok) {
         const rawData: any[] = await response.json();
         const coins: CryptoMarketCoin[] = rawData.map(c => {
           const symUpper = c.symbol.toUpperCase();
-          const isTonGram = symUpper === 'TON' || symUpper === 'GRAM' || c.id === 'the-open-network';
+          const isTonGram = c.id === 'the-open-network';
           const isTradable = isTonGram || this.TRADABLE_SYMBOLS.has(symUpper);
           const tradingPair = isTradable ? (isTonGram ? 'TON-USDT' : `${symUpper}-USDT`) : undefined;
           return {
@@ -300,12 +310,13 @@ export class CoinGeckoFeed {
       // CoinGecko API request failed or timed out — fallback safely
     }
 
+    this.retryAfter = Math.max(this.retryAfter, now + 5 * 60 * 1000);
     // Fallback to cached or preset dataset
     const fallbackList = this.cache || this.FALLBACK_COINS;
     return {
       coins: fallbackList,
       total: fallbackList.length,
-      lastUpdated: this.lastFetchedTime || now,
+      lastUpdated: this.lastFetchedTime,
       cacheSource: 'fallback_dataset',
       attribution: 'Data provided by CoinGecko (Fallback/Offline Cache)',
       nextRefreshSeconds: 300

@@ -7,7 +7,7 @@ import { AuthService } from '../src/auth/AuthService.js';
 
 describe('Free-Tier Usable Demo Suite (CoinGecko, Auth, Virtual Money)', () => {
   it('should provide cached Top 100 coin market data with ₹0 API cost limits', async () => {
-    const feed = new CoinGeckoFeed();
+    const feed = new CoinGeckoFeed(async () => new Response('', { status: 503 }));
     const data = await feed.getTop100Coins();
 
     assert.ok(data.coins.length >= 10);

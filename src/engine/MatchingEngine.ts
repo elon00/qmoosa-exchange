@@ -418,7 +418,7 @@ export class MatchingEngine {
     } else {
       // (orderId, undefined, userId) - locate book
       orderId = param1;
-      userId = param2 || 'user_trader1';
+      userId = param3 || param2 || 'user_trader1';
       for (const [s, b] of this.orderBooks) {
         if (b.getOrder(orderId)) {
           symbol = s;
@@ -433,7 +433,7 @@ export class MatchingEngine {
     const config = this.marketConfigs.get(symbol)!;
 
     const order = book.getOrder(orderId);
-    if (!order) return null;
+    if (!order || order.userId !== userId) return null;
 
     book.removeOrder(orderId);
     order.status = 'CANCELLED';

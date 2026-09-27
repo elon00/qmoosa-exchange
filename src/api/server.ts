@@ -1,3 +1,4 @@
+import path from 'node:path';
 import http from 'node:http';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
@@ -39,7 +40,7 @@ export const authService = new AuthService(db, ledger);
 export const marketFeed = new CoinGeckoFeed();
 
 // Initialize Database Schema (Postgres if DATABASE_URL provided, else in-memory)
-db.initSchema().catch(err => console.warn('[Database] Schema initialization warning:', err));
+await db.initSchema();
 
 // 0x Protocol Hybrid Subsystems
 export const zeroExOrderBook = new ZeroExOrderBook();
@@ -245,8 +246,46 @@ seedZeroExOrders();
 
 // Express Application Setup
 const app = express();
-app.use(cors());
-app.use(express.json());
+app.use(cors({ origin: process.env.FRONTEND_ORIGIN || false }));
+app.disable('x-powered-by');
+app.use(express.json({ limit: '32kb' }));
+// A bounded process-wide budget protects this small free-tier sandbox.
+let requestWindow = Date.now(); let requestCount = 0;
+app.use((req, res, next) => {
+  if (req.path === '/health') { next(); return; }
+  if (Date.now() - requestWindow >= 60000) { requestWindow = Date.now(); requestCount = 0; }
+  if (++requestCount > 300) { res.status(429).json({ error: 'SANDBOX_RATE_LIMIT' }); return; }
+  next();
+});
+
+// This deployment is an explicitly non-custodial sandbox; unsafe legacy
+// operations stay disabled until independently verified implementations exist.
+app.use((req, res, next) => {
+  res.setHeader('X-Qmoosa-Mode', 'sandbox');
+  if (req.path.startsWith('/api/custody') || req.path.startsWith('/api/bots') ||
+      req.path.startsWith('/api/v1/agentics') || req.path.startsWith('/api/v1/multimodal') ||
+      req.path === '/api/v1/pqc/sign' || req.path === '/api/v1/pqc/encapsulate') {
+    res.status(503).json({ error: 'FEATURE_NOT_ACTIVATED', mode: 'sandbox', realFunds: false });
+    return;
+  }
+  next();
+});
+const requireSession: express.RequestHandler = (req, res, next) => {
+  const token = req.headers.authorization?.replace(/^Bearer /, '') || '';
+  const userId = authService.authenticate(token);
+  if (!userId) { res.status(401).json({ error: 'AUTHENTICATION_REQUIRED' }); return; }
+  // Never trust client-provided account identity.
+  req.query.userId = userId;
+  req.body = { ...(req.body || {}), userId };
+  res.locals.userId = userId;
+  next();
+};
+app.use(['/api/portfolio', '/api/auth/me', '/api/v3'], requireSession);
+app.post('/api/auth/logout', requireSession, (req, res) => {
+  authService.logout(req.headers.authorization!.replace(/^Bearer /, ''));
+  res.json({ success: true });
+});
+
 
 // -------------------------------------------------------------
 // Health Check Endpoint (Render Sleep & Uptime Monitor)
@@ -257,8 +296,11 @@ app.get('/health', (_req: Request, res: Response) => {
     timestamp: Date.now(),
     uptimeSeconds: Math.floor(process.uptime()),
     database: db.getType(),
-    mode: 'Hybrid (CEX + 0x Protocol v4)',
-    proofOfReserves: '108.5% Solvent',
+    mode: 'sandbox',
+    realFundsEnabled: false,
+    tradingPersistence: 'volatile_memory',
+    paymentSettlement: 'disabled',
+    proofOfReserves: 'not_audited',
     memoryUsage: process.memoryUsage()
   });
 });
@@ -324,20 +366,38 @@ app.post('/api/portfolio/reset', async (req: Request, res: Response) => {
 });
 
 // Attach Binance & Coinbase API Routers
+app.use('/api/v3', (req, res, next) => {
+  if (req.method === 'POST' && req.path === '/order') {
+    const q = Number(req.body.quantity); const p = Number(req.body.price);
+    if (!['BUY', 'SELL'].includes(req.body.side) || !['LIMIT', 'MARKET'].includes(req.body.type) ||
+        typeof req.body.symbol !== 'string' || !Number.isFinite(q) || q <= 0 || q > 1000000 ||
+        (req.body.type === 'LIMIT' && (!Number.isFinite(p) || p <= 0 || p > 1000000000))) {
+      res.status(400).json({ error: 'INVALID_ORDER' }); return;
+    }
+  }
+  // Coinbase writes need their own validated schema before activation.
+  if (req.path.startsWith('/brokerage') && req.method !== 'GET') {
+    res.status(503).json({ error: 'BROKERAGE_WRITES_NOT_ACTIVATED' }); return;
+  }
+  next();
+});
 app.use('/api/v3', createBinanceRouter(engine, ledger));
 app.use('/api/v3/brokerage', createCoinbaseRouter(engine, ledger));
 
 // Attach 0x Protocol SRA and Swap API Routers
 const { sraRouter, swapRouter } = createZeroExRouter(zeroExOrderBook, hybridRouter);
-app.use('/orderbook/v1', sraRouter);
+app.use('/orderbook/v1', (req, res, next) => {
+  if (req.method !== 'GET') { res.status(503).json({ error: 'RELAYER_WRITES_NOT_ACTIVATED' }); return; }
+  next();
+}, sraRouter);
 app.use('/swap/v1', swapRouter);
 
 // Attach x402 v2 Bazaar Discovery & API Routers
 app.get('/.well-known/x402-bazaar.json', (_req: Request, res: Response) => {
-  res.json(x402ServiceManager.getBazaarManifest());
+  res.json({ status: "disabled", services: [], realFundsEnabled: false });
 });
 app.get('/.well-known/x402.json', (_req: Request, res: Response) => {
-  res.json(x402ServiceManager.getBazaarManifest());
+  res.json({ status: "disabled", services: [], realFundsEnabled: false });
 });
 app.use('/api/v1/x402', createX402Router(x402Gateway, x402ServiceManager));
 
@@ -487,6 +547,10 @@ app.post('/api/bots/grid/toggle', (req: Request, res: Response) => {
   }
   res.json({ running: gridBot.isRunning, stats: gridBot.getStats() });
 });
+
+// Serve the Vite frontend from the same origin as the API on Render.
+app.use(express.static(path.resolve('dist/client')));
+app.get('/', (_req, res) => res.sendFile(path.resolve('dist/client/index.html')));
 
 // HTTP & WebSocket Server Setup
 const server = http.createServer(app);

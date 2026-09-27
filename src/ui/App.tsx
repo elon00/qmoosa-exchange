@@ -702,233 +702,24 @@ export default function App() {
   };
 
   const handleTriggerX402Challenge = async () => {
-    setX402Receipt(null);
-    setX402ResultData(null);
-    setX402Status('Sending unpaid request... Expecting HTTP 402 Payment Required');
-    try {
-      const res = await fetch(`/api/v1/x402/challenge?service=${x402Service}`);
-      if (res.status === 402) {
-        const body = await res.json();
-        setX402Challenge(body.challenge);
-        setX402Status('Received HTTP 402 Payment Required challenge!');
-        return;
-      }
-    } catch {
-      // Fallback to local simulation for static GitHub Pages / offline mode
-    }
-
-    const dummyChallenge = {
-      nonce: `ch_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
-      service: `/api/v1/x402/${x402Service === 'tradeSettle' ? 'trade-settle' : x402Service === 'orderbookDepth' ? 'orderbook-depth' : x402Service === 'porAttestation' ? 'por-attestation' : 'signals'}`,
-      cost: x402Service === 'tradeSettle' ? '0.002 USDC' : x402Service === 'orderbookDepth' ? '0.0005 USDC' : '0.001 USDC',
-      amountUnits: x402Service === 'tradeSettle' ? '2000' : '1000',
-      currency: 'USDC',
-      issuedAt: Date.now(),
-      expiresAt: Date.now() + 300000,
-      acceptedRoutes: [
-        { chain: 'solana', caip2: 'solana:4uhcVJyU9pJkvQyS88uRDiswHXSCkY3z', currency: 'USDC', payTo: 'BPshPrMazV7qunhcq18AvCHjSceHbKytiRDNrtCv68g3', name: 'Solana Testnet' },
-        { chain: 'evm', caip2: 'eip155:97', currency: 'USDT', payTo: '0x89205A3A3b2A69De6Dbf7f01ED13B2108B2c43e7', name: 'BNB Smart Chain Testnet / EVM' },
-        { chain: 'ton', caip2: 'ton:-239', currency: 'GRAM', payTo: 'UQAJO_hgYMZq3ULuzFv7927z-WgsM0BApc0IRniDrHORTzm3', name: 'TON Mainnet (Gram)' }
-      ]
-    };
-    setX402Challenge(dummyChallenge);
-    setX402Status('Simulated HTTP 402 Payment Required Challenge received');
+    setX402Challenge(null); setX402Receipt(null); setX402ResultData(null);
+    setX402Status('Payments disabled: verified testnet settlement is not configured. Do not send funds.');
   };
-
-  const handleSettleX402Payment = async () => {
-    if (!x402Challenge) return;
-    setX402Status('Signing micropayment challenge with machine agent key...');
-
-    const payerAddress =
-      x402Chain === 'solana'
-        ? 'BPshPrMazV7qunhcq18AvCHjSceHbKytiRDNrtCv68g3'
-        : x402Chain === 'evm'
-        ? '0x89205A3A3b2A69De6Dbf7f01ED13B2108B2c43e7'
-        : 'UQAJO_hgYMZq3ULuzFv7927z-WgsM0BApc0IRniDrHORTzm3';
-
-    const simulatedSig =
-      x402Chain === 'solana'
-        ? '5K2bM8X9vYwz1aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890abcdefghijklmnopqrstuv'
-        : x402Chain === 'evm'
-        ? '0x3a4f9b8c2d1e0f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a1b'
-        : 'gram_sig_9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f';
-
-    const proofPayload = {
-      nonce: x402Challenge.nonce,
-      service: x402Challenge.service,
-      chain: x402Chain,
-      payer: payerAddress,
-      signature: simulatedSig,
-      timestamp: Date.now()
-    };
-
-    const encodedProof = btoa(JSON.stringify(proofPayload));
-
-    try {
-      const endpoint = x402Challenge.service;
-      const res = await fetch(endpoint, {
-        method: x402Service === 'tradeSettle' ? 'POST' : 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'PAYMENT-SIGNATURE': encodedProof,
-          'x-payment-signature': encodedProof
-        },
-        body: x402Service === 'tradeSettle' ? JSON.stringify({ pair: 'TON-USDT', side: 'BUY', price: 6.45, amount: 10 }) : undefined
-      });
-
-      if (res.ok) {
-        const body = await res.json();
-        setX402Receipt(body.receipt || {
-          receiptId: `rcpt_${Math.random().toString(36).substring(2, 10)}`,
-          status: 'SETTLED',
-          chain: x402Chain,
-          payer: payerAddress,
-          settledAmount: x402Challenge.cost,
-          settledAt: new Date().toISOString()
-        });
-        setX402ResultData(body.data || body.result || body.depth || body.attestation);
-        setX402Status('Micropayment verified & settled! HTTP 200 OK received');
-        return;
-      }
-    } catch {
-      // Local fallback
-    }
-
-    const simulatedReceipt = {
-      receiptId: `rcpt_${Math.random().toString(36).substring(2, 10)}`,
-      nonce: x402Challenge.nonce,
-      service: x402Challenge.service,
-      payer: payerAddress,
-      chain: x402Chain,
-      settledAmount: x402Challenge.cost,
-      settledAt: new Date().toISOString(),
-      status: 'SETTLED'
-    };
-    setX402Receipt(simulatedReceipt);
-
-    if (x402Service === 'signals') {
-      setX402ResultData({
-        signals: [
-          { pair: 'TON-USDT', cexPrice: 6.452, zeroExPrice: 6.505, ammPrice: 6.418, spreadBps: 135, recommendedRoute: 'BUY DEX AMM @ 6.418 ➡️ SELL 0x Relayer @ 6.505', expectedProfitPct: 1.20 },
-          { pair: 'BTC-USDT', cexPrice: 64280.5, zeroExPrice: 64390.0, ammPrice: 64150.0, spreadBps: 37, recommendedRoute: 'TRIANGULAR: DEX ➡️ 0x Relayer ➡️ CEX', expectedProfitPct: 0.22 },
-          { pair: 'ETH-USDT', cexPrice: 3485.2, zeroExPrice: 3510.4, ammPrice: 3478.0, spreadBps: 93, recommendedRoute: 'BUY CEX @ 3485.2 ➡️ SELL 0x Relayer @ 3510.4', expectedProfitPct: 0.78 },
-          { pair: 'SOL-USDT', cexPrice: 154.8, zeroExPrice: 156.2, ammPrice: 154.1, spreadBps: 136, recommendedRoute: 'BUY DEX AMM @ 154.1 ➡️ SELL 0x Relayer @ 156.2', expectedProfitPct: 1.21 }
-        ],
-        activeVenues: ['Qmoosa CEX Engine', '0x SRA Relayer v4', 'Uniswap / Raydium / STON.fi']
-      });
-    } else if (x402Service === 'tradeSettle') {
-      setX402ResultData({
-        orderId: `ord_x402_${Date.now()}`,
-        status: 'FILLED',
-        pair: 'TON-USDT',
-        side: 'BUY',
-        amount: 10,
-        price: 6.452,
-        venue: 'Qmoosa CEX (0x Co-Settled)',
-        feeSettlement: '0.002 USDC settled via x402 channel'
-      });
-    } else if (x402Service === 'orderbookDepth') {
-      setX402ResultData({
-        pair: 'TON-USDT',
-        cexBids: 18,
-        cexAsks: 15,
-        zeroExOrders: 8,
-        bestBid: 6.450,
-        bestAsk: 6.453,
-        spread: 0.003
-      });
-    } else {
-      setX402ResultData({
-        solvencyStatus: '100% FULLY SOLVENT & AUDITED',
-        rootHash: '0x8f2d9c1b7a4e58f96e4c7d0b3a1f9e2c4a8b7d6e5c4b3a2f1e0d9c8b7a6f5e4d',
-        reservesRatio: '108.5%',
-        totalReservesUsd: '$4,850,000',
-        attestationSignature: 'por_sig_ODgyZDljMWI3YTRlNThmOTZlNGM3'
-      });
-    }
-
-    setX402Status('Micropayment verified & settled! HTTP 200 OK received');
-  };
-
+  const handleSettleX402Payment = handleTriggerX402Challenge;
   const handleExecuteAgentCycle = async () => {
-    setAgentCycleStatus('Running autonomous swarm cycle...');
-    try {
-      const res = await fetch('/api/v1/agentics/cycle', { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        setAgentLogs(prev => [
-          ...data.actions.map((a: any) => ({
-            id: a.id,
-            agentName: a.agentName,
-            actionType: a.actionType,
-            details: a.details,
-            time: 'Just now',
-            profit: a.profitUsd ? `+$${a.profitUsd}` : undefined,
-            pqc: a.pqcVerified
-          })),
-          ...prev.slice(0, 10)
-        ]);
-        setAgentCycleStatus(`Cycle executed successfully! ${data.executedActions} agent actions completed.`);
-        return;
-      }
-    } catch {
-      // Local fallback
-    }
-
-    const newAction = {
-      id: `act_${Date.now()}`,
-      agentName: 'Alpha Arbitrage Swarm',
-      actionType: 'ARBITRAGE_TRADE',
-      details: `Captured ${Math.floor(28 + Math.random() * 30)} bps spread on TON-USDT across 0x Relayer & CEX Engine`,
-      time: 'Just now',
-      profit: `+$${(Math.random() * 4 + 1).toFixed(2)}`,
-      pqc: true
-    };
-    setAgentLogs(prev => [newAction, ...prev.slice(0, 15)]);
-    setAgentCycleStatus('Autonomous swarm cycle executed (Simulated & PQC Verified)!');
+    setAgentCycleStatus('Not activated: existing agent strategies are simulations. No trades executed.');
   };
-
   const handleExecuteNlPrompt = async () => {
-    if (!nlPrompt) return;
-    try {
-      const res = await fetch('/api/v1/agentics/prompt-trade', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: nlPrompt, currentPrice: currentMarket.price })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setPromptExecutionResult(data);
-        alert(`✅ Agentic Order Executed!\n${data.interpreted.rationale}\n🛡️ Protected by ML-DSA-65 Quantum Signature!`);
-        return;
-      }
-    } catch {
-      // Local fallback
-    }
-
-    const fallbackResult = {
-      success: true,
-      interpreted: {
-        symbol: 'TON-USDT',
-        side: 'BUY',
-        quantity: 25,
-        price: 6.40,
-        stopLoss: 6.10,
-        takeProfit: 7.20,
-        rationale: 'Transpiled intent: BUY 25 TON-USDT via LIMIT order @ 6.40 (SL: 6.10, TP: 7.20)'
-      },
-      pqcOrder: {
-        quantumSafe: true,
-        orderHash: '0x9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f',
-        signatureLength: '3,309 bytes (NIST FIPS 204 ML-DSA-65)'
-      }
-    };
-    setPromptExecutionResult(fallbackResult);
-    alert(`✅ Agentic Order Executed!\n${fallbackResult.interpreted.rationale}\n🛡️ Protected by ML-DSA-65 Quantum Signature!`);
+    setPromptExecutionResult(null);
+    alert('Prompt trading is disabled until risk controls and execution are verified.');
   };
 
   return (
     <div className="flex flex-col min-h-screen bg-[#0b0e14] text-[#eaecef]">
+      <div role="status" className="p-4 bg-amber-950 text-amber-100 text-sm">
+        SANDBOX — simulated trading, AI and reserve displays. No real deposits, withdrawals or x402 settlement.
+        PQC algorithms are demonstrations, not NIST certification. <a href="/sandbox.html" className="underline">Open connected backend dashboard</a>
+      </div>
       {/* Top Navigation Bar */}
       <header className="h-14 border-b border-[#1e2329] bg-[#12161f] px-4 flex items-center justify-between z-20">
         <div className="flex items-center space-x-6">

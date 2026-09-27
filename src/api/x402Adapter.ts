@@ -4,6 +4,10 @@ import { X402ServiceManager, X402_SERVICES } from '../x402/X402Services.js';
 
 export function createX402Router(gateway: X402Gateway, serviceManager: X402ServiceManager): Router {
   const router = Router();
+  router.use((_req, res) => {
+    res.status(503).json({ error: 'PAYMENT_VERIFICATION_UNAVAILABLE', realFundsEnabled: false,
+      message: 'No payment is requested or accepted until verified settlement is implemented.' });
+  });
 
   // Public discovery manifest
   router.get('/manifest', (_req: Request, res: Response) => {
@@ -30,7 +34,7 @@ export function createX402Router(gateway: X402Gateway, serviceManager: X402Servi
   // Mesh status endpoint
   router.get('/mesh-status', (_req: Request, res: Response) => {
     res.json({
-      status: 'SYNCHRONIZED',
+      status: 'NOT_VERIFIED',
       orchestrator: 'bountyhunter-os',
       nodeId: 'qmoosa-exchange',
       role: 'Hybrid Liquidity, 0x Relayer & x402 Settlement Hub',
@@ -38,7 +42,7 @@ export function createX402Router(gateway: X402Gateway, serviceManager: X402Servi
       connectedChains: ['Solana Testnet', 'BNB Chain / EVM', 'TON Mainnet (Gram)'],
       supportedAssets: ['USDC', 'USDT', 'SOL', 'GRAM', 'TON', 'BTC', 'ETH'],
       activeServicesCount: Object.keys(X402_SERVICES).length,
-      lastSync: new Date().toISOString()
+      lastSync: null
     });
   });
 

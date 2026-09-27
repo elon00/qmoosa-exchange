@@ -66,68 +66,8 @@ export class X402Gateway {
    * Verifies an incoming payment proof (PAYMENT-SIGNATURE header)
    */
   public verifyProof(rawHeader: string | undefined): { valid: boolean; receipt?: X402Receipt; error?: string } {
-    if (!rawHeader) {
-      return { valid: false, error: 'Missing PAYMENT-SIGNATURE header' };
-    }
-
-    try {
-      let parsedProof: X402PaymentProof;
-      if (rawHeader.startsWith('{')) {
-        parsedProof = JSON.parse(rawHeader);
-      } else {
-        // Base64 encoded payload
-        const decoded = Buffer.from(rawHeader, 'base64').toString('utf-8');
-        parsedProof = JSON.parse(decoded);
-      }
-
-      if (!parsedProof.nonce || !parsedProof.payer || !parsedProof.signature) {
-        return { valid: false, error: 'Malformed payment proof fields' };
-      }
-
-      if (this.processedNonces.has(parsedProof.nonce)) {
-        return { valid: false, error: 'Replay attack detected: Nonce has already been settled' };
-      }
-
-      const challenge = this.activeChallenges.get(parsedProof.nonce);
-      if (!challenge) {
-        return { valid: false, error: 'Invalid or expired payment challenge nonce' };
-      }
-
-      if (Date.now() > challenge.expiresAt) {
-        this.activeChallenges.delete(parsedProof.nonce);
-        return { valid: false, error: 'Payment challenge has expired' };
-      }
-
-      // Cryptographic verification check
-      // Accepts signatures from Solana (Base58), EVM (0x Hex 65-byte), or Gram/TON hashes
-      const sig = parsedProof.signature.trim();
-      const isSolanaSig = sig.length >= 64 && !sig.startsWith('0x');
-      const isEvmSig = sig.startsWith('0x') && sig.length >= 130;
-      const isTonSig = sig.startsWith('gram_') || sig.startsWith('ton_') || sig.length >= 44;
-
-      if (!isSolanaSig && !isEvmSig && !isTonSig && !sig.startsWith('sig_x402_')) {
-        return { valid: false, error: 'Signature format incompatible with supported CAIP-2 chains' };
-      }
-
-      // Mark challenge as settled
-      this.processedNonces.add(parsedProof.nonce);
-      this.activeChallenges.delete(parsedProof.nonce);
-
-      const receipt: X402Receipt = {
-        receiptId: `rcpt_${crypto.randomBytes(8).toString('hex')}`,
-        nonce: parsedProof.nonce,
-        service: parsedProof.service || challenge.service,
-        payer: parsedProof.payer,
-        chain: parsedProof.chain || 'multi-chain',
-        settledAmount: challenge.cost,
-        settledAt: new Date().toISOString(),
-        status: 'SETTLED'
-      };
-
-      return { valid: true, receipt };
-    } catch {
-      return { valid: false, error: 'Failed to decode PAYMENT-SIGNATURE header' };
-    }
+    // Fail closed: format checks cannot establish payment or settlement.
+    return { valid: false, error: 'PAYMENT_VERIFICATION_UNAVAILABLE: no verified settlement provider configured' };
   }
 
   /**

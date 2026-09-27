@@ -16,7 +16,7 @@ describe('x402 Bazaar Protocol Suite (M2M Agentics & Fee Settlement)', () => {
   const porEngine = new ProofOfReservesEngine(ledger);
   const zeroExOrderBook = new ZeroExOrderBook();
   const hybridRouter = new HybridOrderRouter(engine, zeroExOrderBook);
-  const feed = new CoinGeckoFeed();
+  const feed = new CoinGeckoFeed(async () => new Response('', { status: 503 }));
   const gateway = new X402Gateway();
   const serviceManager = new X402ServiceManager(
     engine,
@@ -62,38 +62,16 @@ describe('x402 Bazaar Protocol Suite (M2M Agentics & Fee Settlement)', () => {
     assert.strictEqual(tonRoute?.payTo, UNIFIED_X402_IDENTITIES.gramTonWallet);
   });
 
-  it('should verify valid cryptographic payment proofs and reject replay attacks', () => {
-    const challenge = gateway.createChallenge(X402_SERVICES.tradeSettle);
-
-    // 1. Missing header
-    const failMissing = gateway.verifyProof(undefined);
-    assert.strictEqual(failMissing.valid, false);
-
-    // 2. Valid Solana payment proof
-    const solanaProof = {
-      nonce: challenge.nonce,
-      service: challenge.service,
-      chain: 'solana' as const,
-      payer: 'BPshPrMazV7qunhcq18AvCHjSceHbKytiRDNrtCv68g3',
-      signature: '5K2bM8X9vYwz1aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890abcdefghijklmnopqrstuv',
-      timestamp: Date.now()
-    };
-
-    const headerVal = Buffer.from(JSON.stringify(solanaProof)).toString('base64');
-    const verification = gateway.verifyProof(headerVal);
-
-    assert.strictEqual(verification.valid, true);
-    assert.ok(verification.receipt);
-    assert.strictEqual(verification.receipt.nonce, challenge.nonce);
-    assert.strictEqual(verification.receipt.status, 'SETTLED');
-
-    // 3. Replay attack rejection: Using the same nonce again must fail
-    const replayCheck = gateway.verifyProof(headerVal);
-    assert.strictEqual(replayCheck.valid, false);
-    assert.ok(replayCheck.error?.includes('Replay attack detected'));
+  it('rejects forged payment formats instead of minting settlement receipts', () => {
+    for (const signature of ['sig_x402_fake', '0x' + 'a'.repeat(130), 'a'.repeat(64), 'ton_fake']) {
+      const challenge = gateway.createChallenge(X402_SERVICES.tradeSettle);
+      const result = gateway.verifyProof(Buffer.from(JSON.stringify({ nonce: challenge.nonce, payer: 'attacker', signature })).toString('base64'));
+      assert.strictEqual(result.valid, false);
+      assert.strictEqual(result.receipt, undefined);
+    }
   });
 
-  it('should return canonical x402 v2 Bazaar discovery manifest', () => {
+  it('retains legacy manifest metadata for internal tests only', () => {
     const manifest = serviceManager.getBazaarManifest();
 
     assert.strictEqual(manifest.x402Version, 2);
@@ -110,7 +88,7 @@ describe('x402 Bazaar Protocol Suite (M2M Agentics & Fee Settlement)', () => {
     assert.ok(serviceIds.includes('qmoosa-por-attestation'));
   });
 
-  it('should generate real-time AI Arbitrage & SOR signals across trading venues', async () => {
+  it('generates synthetic signal fixtures, not live venue quotes', async () => {
     const result = await serviceManager.getArbitrageSignals();
 
     assert.ok(result.signals.length >= 4);
@@ -124,29 +102,17 @@ describe('x402 Bazaar Protocol Suite (M2M Agentics & Fee Settlement)', () => {
     assert.ok(tonSignal.spreadBps >= 0);
   });
 
-  it('should execute zero-balance agent trade with x402 settlement receipt binding', () => {
-    const tradeResult = serviceManager.executeAgentTrade({
-      pair: 'TON-USDT',
-      side: 'BUY',
-      price: 6.45,
-      amount: 10,
-      payer: 'agent_autonomous_bot',
-      receiptId: 'rcpt_test_12345'
-    });
-
-    assert.strictEqual(tradeResult.success, true);
-    assert.strictEqual(tradeResult.x402SettlementReceipt, 'rcpt_test_12345');
-    assert.strictEqual(tradeResult.order.symbol, 'TON-USDT');
-    assert.strictEqual(tradeResult.order.side, 'BUY');
-    assert.strictEqual(tradeResult.order.price, 6.45);
-    assert.strictEqual(tradeResult.order.quantity, 10);
+  it('rejects unfunded trades without creating virtual collateral', () => {
+    assert.throws(() => serviceManager.executeAgentTrade({ pair: 'TON-USDT', side: 'BUY', price: 6.45, amount: 10, payer: 'unfunded', receiptId: 'fake' }), /INSUFFICIENT_COLLATERAL/);
+    assert.strictEqual(ledger.getBalance('unfunded', 'USDT').total, 0);
   });
 
-  it('should provide cryptographically verifiable Proof of Reserves attestation', () => {
+  it('labels reserve reports unaudited without fabricating a signature', () => {
     const por = serviceManager.getPoRAttestation('agent_trader');
 
-    assert.strictEqual(por.solvencyStatus, '100% FULLY SOLVENT & AUDITED');
+    assert.strictEqual(por.solvencyStatus, 'SIMULATED_RESERVES_NOT_AUDITED');
     assert.ok(por.rootHash.length > 0);
-    assert.ok(por.attestationSignature.startsWith('por_sig_'));
+    assert.strictEqual(por.attestationSignature, null);
+    assert.strictEqual(por.audited, false);
   });
 });

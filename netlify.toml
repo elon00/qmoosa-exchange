@@ -1,6 +1,6 @@
 [build]
   command = "npm run build:client"
-  publish = "dist"
+  publish = "dist/client"
 
 [[redirects]]
   from = "/*"
