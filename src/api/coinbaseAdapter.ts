@@ -12,17 +12,21 @@ export function createCoinbaseRouter(engine: MatchingEngine, ledger: Ledger): Ro
     res.json({
       products: markets.map(m => {
         const stats = engine.get24HourStats(m.symbol);
+        const quotePrecision = m.quotePrecision ?? 4;
+        const basePrecision = m.basePrecision ?? 2;
+        const minQty = m.minQuantity ?? m.minQty ?? 0.1;
+
         return {
           product_id: m.symbol,
-          price: stats.closePrice.toFixed(m.quotePrecision),
+          price: stats.closePrice.toFixed(quotePrecision),
           price_percentage_change_24h: (
             stats.openPrice > 0 ? ((stats.closePrice - stats.openPrice) / stats.openPrice) * 100 : 0
           ).toFixed(2),
-          volume_24h: stats.volume.toFixed(m.basePrecision),
+          volume_24h: stats.volume.toFixed(basePrecision),
           volume_percentage_change_24h: '0.00',
-          base_increment: (1 / Math.pow(10, m.basePrecision)).toFixed(m.basePrecision),
-          quote_increment: (1 / Math.pow(10, m.quotePrecision)).toFixed(m.quotePrecision),
-          base_min_size: m.minQty.toString(),
+          base_increment: (1 / Math.pow(10, basePrecision)).toFixed(basePrecision),
+          quote_increment: (1 / Math.pow(10, quotePrecision)).toFixed(quotePrecision),
+          base_min_size: minQty.toString(),
           base_max_size: '10000000',
           base_name: m.baseAsset,
           base_currency_id: m.baseAsset,
@@ -44,7 +48,8 @@ export function createCoinbaseRouter(engine: MatchingEngine, ledger: Ledger): Ro
 
   // GET /api/v3/brokerage/products/:product_id
   router.get('/products/:product_id', (req: Request, res: Response) => {
-    const productId = req.params.product_id.toUpperCase();
+    const rawProductId = Array.isArray(req.params.product_id) ? req.params.product_id[0] : req.params.product_id;
+    const productId = rawProductId.toUpperCase();
     const market = engine.getMarket(productId);
 
     if (!market) {
@@ -53,16 +58,20 @@ export function createCoinbaseRouter(engine: MatchingEngine, ledger: Ledger): Ro
     }
 
     const stats = engine.get24HourStats(productId);
+    const quotePrecision = market.quotePrecision ?? 4;
+    const basePrecision = market.basePrecision ?? 2;
+    const minQty = market.minQuantity ?? market.minQty ?? 0.1;
+
     res.json({
       product_id: market.symbol,
-      price: stats.closePrice.toFixed(market.quotePrecision),
+      price: stats.closePrice.toFixed(quotePrecision),
       price_percentage_change_24h: (
         stats.openPrice > 0 ? ((stats.closePrice - stats.openPrice) / stats.openPrice) * 100 : 0
       ).toFixed(2),
-      volume_24h: stats.volume.toFixed(market.basePrecision),
-      base_increment: (1 / Math.pow(10, market.basePrecision)).toFixed(market.basePrecision),
-      quote_increment: (1 / Math.pow(10, market.quotePrecision)).toFixed(market.quotePrecision),
-      base_min_size: market.minQty.toString(),
+      volume_24h: stats.volume.toFixed(basePrecision),
+      base_increment: (1 / Math.pow(10, basePrecision)).toFixed(basePrecision),
+      quote_increment: (1 / Math.pow(10, quotePrecision)).toFixed(quotePrecision),
+      base_min_size: minQty.toString(),
       base_currency_id: market.baseAsset,
       quote_currency_id: market.quoteAsset,
       status: 'online',
@@ -74,24 +83,23 @@ export function createCoinbaseRouter(engine: MatchingEngine, ledger: Ledger): Ro
   router.get('/product_book', (req: Request, res: Response) => {
     const productId = (req.query.product_id as string || 'TON-USDT').toUpperCase();
     const limit = parseInt((req.query.limit as string) || '50', 10);
-    const book = engine.getOrderBook(productId);
+    const snapshot = engine.getDepth(productId, limit);
 
-    if (!book) {
+    if (!snapshot) {
       res.status(404).json({ error: 'UNKNOWN_PRODUCT', message: `Product ${productId} not found` });
       return;
     }
 
-    const snapshot = book.getSnapshot(limit);
     res.json({
       pricebook: {
         product_id: productId,
-        bids: snapshot.bids.map(b => ({
-          price: b.price.toFixed(4),
-          size: b.quantity.toFixed(4)
+        bids: snapshot.bids.map((b: [number, number]) => ({
+          price: b[0].toFixed(4),
+          size: b[1].toFixed(4)
         })),
-        asks: snapshot.asks.map(a => ({
-          price: a.price.toFixed(4),
-          size: a.quantity.toFixed(4)
+        asks: snapshot.asks.map((a: [number, number]) => ({
+          price: a[0].toFixed(4),
+          size: a[1].toFixed(4)
         })),
         time: new Date(snapshot.timestamp).toISOString()
       }
@@ -100,8 +108,8 @@ export function createCoinbaseRouter(engine: MatchingEngine, ledger: Ledger): Ro
 
   // GET /api/v3/brokerage/products/:product_id/candles
   router.get('/products/:product_id/candles', (req: Request, res: Response) => {
-    const productId = req.params.product_id.toUpperCase();
-    const granularity = (req.query.granularity as string) || 'ONE_MINUTE';
+    const rawProductId = Array.isArray(req.params.product_id) ? req.params.product_id[0] : req.params.product_id;
+    const productId = rawProductId.toUpperCase();
     const limit = parseInt((req.query.limit as string) || '100', 10);
 
     const klines = engine.getKlines(productId, '1m', limit);
@@ -150,7 +158,7 @@ export function createCoinbaseRouter(engine: MatchingEngine, ledger: Ledger): Ro
         userId,
         symbol: product_id.toUpperCase(),
         side: side.toUpperCase() as Side,
-        type,
+        type: type === 'LIMIT' ? 'LIMIT' : 'MARKET',
         quantity: size,
         price: limitPrice,
         clientOrderId: client_order_id

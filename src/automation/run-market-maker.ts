@@ -25,24 +25,24 @@ engine.registerMarket({
 ledger.deposit('mm_bot', 'USDT', 500000);
 ledger.deposit('mm_bot', 'TON', 100000);
 
-const mm = new MarketMakerBot(engine, ledger, {
+const mm = new MarketMakerBot(engine, {
   symbol: 'TON-USDT',
-  initialMidPrice: 6.50,
-  spreadPct: 0.002,
+  botUserId: 'mm_bot',
+  baseAnchorPrice: 6.50,
+  spreadBps: 20,
   levels: 10,
-  orderSize: 50,
-  intervalMs: 1000,
-  volatilityPct: 0.0015,
-  userId: 'mm_bot'
+  levelStepBps: 10,
+  quantityPerLevel: 50,
+  volatilityJitter: 0.15
 });
 
 mm.start();
 
 setInterval(() => {
   const stats = mm.getStats();
-  const book = engine.getOrderBook('TON-USDT')?.getSnapshot(3);
-  console.log(`[MM Cycle ${stats.cycleCount}] Mid: $${stats.midPrice.toFixed(4)} | Spread: ${(stats.spread * 100).toFixed(2)}% | Active Orders: ${stats.activeOrdersCount}`);
-  if (book && book.bids[0] && book.asks[0]) {
-    console.log(`   Best Bid: $${book.bids[0].price.toFixed(4)} (${book.bids[0].quantity}) | Best Ask: $${book.asks[0].price.toFixed(4)} (${book.asks[0].quantity})`);
+  const depth = engine.getDepth('TON-USDT', 3);
+  console.log(`[MM Cycle] Mid: $${stats.midPrice.toFixed(4)} | Active Orders: ${stats.activeOrdersCount}`);
+  if (depth && depth.bids[0] && depth.asks[0]) {
+    console.log(`   Best Bid: $${depth.bids[0][0].toFixed(4)} (${depth.bids[0][1]}) | Best Ask: $${depth.asks[0][0].toFixed(4)} (${depth.asks[0][1]})`);
   }
 }, 3000);

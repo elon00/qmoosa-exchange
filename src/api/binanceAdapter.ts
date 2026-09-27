@@ -36,32 +36,39 @@ export function createBinanceRouter(engine: MatchingEngine, ledger: Ledger): Rou
           limit: 100
         }
       ],
-      symbols: markets.map(m => ({
-        symbol: m.symbol.replace('-', ''),
-        status: 'TRADING',
-        baseAsset: m.baseAsset,
-        baseAssetPrecision: m.basePrecision,
-        quoteAsset: m.quoteAsset,
-        quotePrecision: m.quotePrecision,
-        orderTypes: ['LIMIT', 'MARKET'],
-        icebergAllowed: false,
-        ocoAllowed: false,
-        quoteOrderQtyMarketAllowed: true,
-        filters: [
-          {
-            filterType: 'PRICE_FILTER',
-            minPrice: m.minPrice.toString(),
-            maxPrice: '1000000.00',
-            tickSize: (1 / Math.pow(10, m.quotePrecision)).toFixed(m.quotePrecision)
-          },
-          {
-            filterType: 'LOT_SIZE',
-            minQty: m.minQty.toString(),
-            maxQty: '9000000.00',
-            stepSize: (1 / Math.pow(10, m.basePrecision)).toFixed(m.basePrecision)
-          }
-        ]
-      }))
+      symbols: markets.map(m => {
+        const quotePrecision = m.quotePrecision ?? 4;
+        const basePrecision = m.basePrecision ?? 2;
+        const minPrice = m.minPrice ?? 0.001;
+        const minQty = m.minQuantity ?? m.minQty ?? 0.1;
+
+        return {
+          symbol: m.symbol.replace('-', ''),
+          status: 'TRADING',
+          baseAsset: m.baseAsset,
+          baseAssetPrecision: basePrecision,
+          quoteAsset: m.quoteAsset,
+          quotePrecision: quotePrecision,
+          orderTypes: ['LIMIT', 'MARKET'],
+          icebergAllowed: false,
+          ocoAllowed: false,
+          quoteOrderQtyMarketAllowed: true,
+          filters: [
+            {
+              filterType: 'PRICE_FILTER',
+              minPrice: minPrice.toString(),
+              maxPrice: '1000000.00',
+              tickSize: (1 / Math.pow(10, quotePrecision)).toFixed(quotePrecision)
+            },
+            {
+              filterType: 'LOT_SIZE',
+              minQty: minQty.toString(),
+              maxQty: '9000000.00',
+              stepSize: (1 / Math.pow(10, basePrecision)).toFixed(basePrecision)
+            }
+          ]
+        };
+      })
     });
   });
 
@@ -80,18 +87,17 @@ export function createBinanceRouter(engine: MatchingEngine, ledger: Ledger): Rou
   router.get('/depth', (req: Request, res: Response) => {
     const symbol = normalizeSymbol(req.query.symbol as string);
     const limit = parseInt((req.query.limit as string) || '50', 10);
-    const book = engine.getOrderBook(symbol);
+    const snapshot = engine.getDepth(symbol, limit);
 
-    if (!book) {
+    if (!snapshot) {
       res.status(400).json({ code: -1121, msg: `Invalid symbol ${symbol}` });
       return;
     }
 
-    const snapshot = book.getSnapshot(limit);
     res.json({
       lastUpdateId: snapshot.timestamp,
-      bids: snapshot.bids.map(b => [b.price.toFixed(4), b.quantity.toFixed(4)]),
-      asks: snapshot.asks.map(a => [a.price.toFixed(4), a.quantity.toFixed(4)])
+      bids: snapshot.bids.map((b: [number, number]) => [b[0].toFixed(4), b[1].toFixed(4)]),
+      asks: snapshot.asks.map((a: [number, number]) => [a[0].toFixed(4), a[1].toFixed(4)])
     });
   });
 
@@ -225,7 +231,8 @@ export function createBinanceRouter(engine: MatchingEngine, ledger: Ledger): Rou
       return;
     }
 
-    if (type === 'LIMIT' && (!parsedPrice || parsedPrice <= 0)) {
+    const orderType = type.toUpperCase() as 'LIMIT' | 'MARKET';
+    if (orderType === 'LIMIT' && (!parsedPrice || parsedPrice <= 0)) {
       res.status(400).json({ code: -1104, msg: 'Price required for LIMIT orders' });
       return;
     }
@@ -235,7 +242,7 @@ export function createBinanceRouter(engine: MatchingEngine, ledger: Ledger): Rou
         userId,
         symbol,
         side: side.toUpperCase() as Side,
-        type: type.toUpperCase() as OrderType,
+        type: orderType,
         quantity: parsedQty,
         price: parsedPrice,
         clientOrderId
@@ -332,8 +339,8 @@ export function createBinanceRouter(engine: MatchingEngine, ledger: Ledger): Rou
     }
 
     res.json({
-      makerCommission: 10, // 0.10%
-      takerCommission: 10, // 0.10%
+      makerCommission: 10,
+      takerCommission: 10,
       buyerCommission: 0,
       sellerCommission: 0,
       canTrade: true,

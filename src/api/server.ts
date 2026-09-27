@@ -4,7 +4,7 @@ import cors from 'cors';
 import { WebSocketServer, WebSocket } from 'ws';
 import { MatchingEngine } from '../engine/MatchingEngine.js';
 import { Ledger } from '../engine/Ledger.js';
-import { MultiChainGateway } from '../custody/MultiChainGateway.js';
+import { MultiChainGateway, SupportedChain } from '../custody/MultiChainGateway.js';
 import { ProofOfReservesEngine, UserAuditProof } from '../custody/ProofOfReserves.js';
 import { MarketMakerBot } from '../automation/MarketMakerBot.js';
 import { GridTradingBot } from '../automation/GridTradingBot.js';
@@ -117,50 +117,50 @@ custody.recordColdStorageBalance('ETH', 220);
 custody.recordHotWalletBalance('SOL', 500);
 custody.recordColdStorageBalance('SOL', 2500);
 
-// Initialize Automated Bots
-export const tonMarketMaker = new MarketMakerBot(engine, ledger, {
+// Initialize Automated Bots with compliant config
+export const tonMarketMaker = new MarketMakerBot(engine, {
   symbol: 'TON-USDT',
-  initialMidPrice: 6.45,
-  spreadPct: 0.003, // 0.3% spread
+  botUserId: 'user_mm',
+  baseAnchorPrice: 6.45,
+  spreadBps: 30, // 0.3% spread
   levels: 10,
-  orderSize: 35,
-  intervalMs: 1500,
-  volatilityPct: 0.001,
-  userId: 'user_mm'
+  levelStepBps: 10,
+  quantityPerLevel: 35,
+  volatilityJitter: 0.1
 });
 
-export const btcMarketMaker = new MarketMakerBot(engine, ledger, {
+export const btcMarketMaker = new MarketMakerBot(engine, {
   symbol: 'BTC-USDT',
-  initialMidPrice: 64250,
-  spreadPct: 0.0015,
+  botUserId: 'user_mm',
+  baseAnchorPrice: 64250,
+  spreadBps: 15,
   levels: 6,
-  orderSize: 0.08,
-  intervalMs: 2000,
-  volatilityPct: 0.0008,
-  userId: 'user_mm'
+  levelStepBps: 5,
+  quantityPerLevel: 0.08,
+  volatilityJitter: 0.08
 });
 
-export const gridBot = new GridTradingBot(engine, ledger, {
+export const gridBot = new GridTradingBot(engine, {
+  botId: 'grid_ton',
+  userId: 'user_grid',
   symbol: 'TON-USDT',
   lowerPrice: 5.5,
   upperPrice: 7.5,
-  gridLevels: 8,
-  investmentQuote: 5000,
-  userId: 'user_grid'
+  grids: 8,
+  totalInvestmentQuote: 5000
 });
 
-export const arbitrageRouter = new ArbitrageRouter(engine);
+export const arbitrageRouter = new ArbitrageRouter();
 
 // Generate Initial Solvency Merkle Tree
 porEngine.generateMerkleSumTree();
 
 // Pre-seed sample 0x Protocol EIP-712 Limit Orders
 async function seedZeroExOrders() {
-  const samplePrivKey = '0x4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d'; // Standard dev key
+  const samplePrivKey = '0x4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d';
   const sampleMaker = '0x90F8bf6A479f320ead074411a4B0e7944Ea8c9C1';
 
   try {
-    // 0x Ask: Sell TON for USDT (makerToken: TON, takerToken: USDT)
     const signedAsk = await ZeroExOrderValidator.signOrder(
       {
         makerToken: KNOWN_TOKENS.TON.address,
@@ -180,7 +180,6 @@ async function seedZeroExOrders() {
     );
     zeroExOrderBook.addOrder(signedAsk);
 
-    // 0x Bid: Buy TON with USDT (makerToken: USDT, takerToken: TON)
     const signedBid = await ZeroExOrderValidator.signOrder(
       {
         makerToken: KNOWN_TOKENS.USDT.address,
@@ -222,10 +221,10 @@ app.use('/swap/v1', swapRouter);
 // Custody & Proof-of-Reserves REST Endpoints
 app.get('/api/custody/wallets', (req: Request, res: Response) => {
   const userId = (req.query.userId as string) || 'user_trader1';
-  const tonAddr = custody.getDepositAddress('TON', userId);
-  const evmAddr = custody.getDepositAddress('EVM', userId);
-  const solAddr = custody.getDepositAddress('SOLANA', userId);
-  const btcAddr = custody.getDepositAddress('BITCOIN', userId);
+  const tonAddr = custody.getDepositAddress(userId, 'TON');
+  const evmAddr = custody.getDepositAddress(userId, 'EVM');
+  const solAddr = custody.getDepositAddress(userId, 'SOLANA');
+  const btcAddr = custody.getDepositAddress(userId, 'BITCOIN');
 
   res.json({
     userId,
@@ -248,7 +247,12 @@ app.post('/api/custody/deposit', (req: Request, res: Response) => {
     return;
   }
 
-  const tx = custody.simulateDeposit(chain, symbol, numAmount, userId);
+  const tx = custody.simulateDeposit({
+    userId,
+    chain: chain.toUpperCase() as SupportedChain,
+    asset: symbol.toUpperCase(),
+    amount: numAmount
+  });
   ledger.deposit(userId, symbol.toUpperCase(), numAmount);
 
   // Update Merkle Tree liabilities
@@ -276,7 +280,7 @@ app.post('/api/custody/withdraw', (req: Request, res: Response) => {
     return;
   }
 
-  const tx = custody.recordWithdrawal(chain, symbol, numAmount, toAddress, userId);
+  const tx = custody.recordWithdrawal(chain as SupportedChain, symbol.toUpperCase(), numAmount, toAddress, userId);
   ledger.withdraw(userId, symbol.toUpperCase(), numAmount);
 
   // Update Merkle Tree liabilities
@@ -295,8 +299,8 @@ app.get('/api/custody/reserves', (_req: Request, res: Response) => {
 });
 
 app.get('/api/custody/proof/:userId', (req: Request, res: Response) => {
-  const userId = req.params.userId;
-  const proof = porEngine.generateProofForUser(userId);
+  const rawUserId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+  const proof = porEngine.generateProofForUser(rawUserId);
 
   if (!proof) {
     res.status(404).json({ error: 'USER_NOT_FOUND_IN_MERKLE_TREE' });
@@ -317,16 +321,16 @@ app.get('/api/bots/status', (_req: Request, res: Response) => {
   res.json({
     marketMaker: {
       TON: {
-        running: tonMarketMaker.isRunning(),
+        running: tonMarketMaker.isRunning,
         stats: tonMarketMaker.getStats()
       },
       BTC: {
-        running: btcMarketMaker.isRunning(),
+        running: btcMarketMaker.isRunning,
         stats: btcMarketMaker.getStats()
       }
     },
     gridBot: {
-      running: gridBot.isRunning(),
+      running: gridBot.isRunning,
       stats: gridBot.getStats()
     },
     arbitrage: arbitrageRouter.scanOpportunities()
@@ -343,7 +347,7 @@ app.post('/api/bots/mm/toggle', (req: Request, res: Response) => {
     bot.stop();
   }
 
-  res.json({ symbol, running: bot.isRunning() });
+  res.json({ symbol, running: bot.isRunning });
 });
 
 app.post('/api/bots/grid/toggle', (req: Request, res: Response) => {
@@ -355,7 +359,7 @@ app.post('/api/bots/grid/toggle', (req: Request, res: Response) => {
   } else {
     gridBot.stop();
   }
-  res.json({ running: gridBot.isRunning(), stats: gridBot.getStats() });
+  res.json({ running: gridBot.isRunning, stats: gridBot.getStats() });
 });
 
 // HTTP & WebSocket Server Setup
@@ -373,7 +377,6 @@ wss.on('connection', (ws: WebSocket) => {
   const sub: ClientSubscription = { ws, channels: new Set(['all']) };
   clients.set(ws, sub);
 
-  // Send welcome handshake
   ws.send(JSON.stringify({ event: 'connected', serverTime: Date.now(), exchange: 'Qmoosa Hybrid' }));
 
   ws.on('message', (data: string) => {
@@ -391,7 +394,7 @@ wss.on('connection', (ws: WebSocket) => {
         ws.send(JSON.stringify({ result: null, id: msg.id || 1 }));
       }
     } catch {
-      // Ignore malformed payloads
+      // Ignore
     }
   });
 
@@ -438,7 +441,7 @@ engine.on('orderPlaced', order => {
     data: {
       e: 'depthUpdate',
       s: order.symbol.replace('-', ''),
-      snapshot: engine.getOrderBook(order.symbol)?.getSnapshot(20)
+      snapshot: engine.getDepth(order.symbol, 20)
     }
   });
 });
@@ -450,7 +453,7 @@ engine.on('orderCancelled', order => {
     data: {
       e: 'depthUpdate',
       s: order.symbol.replace('-', ''),
-      snapshot: engine.getOrderBook(order.symbol)?.getSnapshot(20)
+      snapshot: engine.getDepth(order.symbol, 20)
     }
   });
 });

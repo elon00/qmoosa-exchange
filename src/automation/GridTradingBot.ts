@@ -13,7 +13,7 @@ export interface GridConfig {
 export class GridTradingBot {
   private engine: MatchingEngine;
   public readonly config: GridConfig;
-  private isRunning = false;
+  public isRunning = false;
   private gridOrders: Map<string, { level: number; side: 'BUY' | 'SELL'; price: number }> = new Map();
   private gridPrices: number[] = [];
 
@@ -25,7 +25,7 @@ export class GridTradingBot {
 
   private calculateGridLevels(): void {
     const market = this.engine.getMarketConfig(this.config.symbol);
-    const precision = market ? market.pricePrecision : 2;
+    const precision = market ? (market.pricePrecision ?? 2) : 2;
     const step = (this.config.upperPrice - this.config.lowerPrice) / this.config.grids;
     this.gridPrices = [];
     for (let i = 0; i <= this.config.grids; i++) {
@@ -52,7 +52,7 @@ export class GridTradingBot {
       const price = this.gridPrices[i];
       if (price < midPrice) {
         // Place BUY below mid
-        const qty = Number((quotePerGrid / price).toFixed(market.quantityPrecision));
+        const qty = Number((quotePerGrid / price).toFixed(market.quantityPrecision ?? 2));
         try {
           const res = this.engine.placeOrder({
             userId: this.config.userId,
@@ -64,10 +64,12 @@ export class GridTradingBot {
           });
           this.gridOrders.set(res.order.id, { level: i, side: 'BUY', price });
           placed++;
-        } catch (e) {}
+        } catch (e) {
+          // Ignored if balance locked
+        }
       } else if (price > midPrice) {
         // Place SELL above mid
-        const qty = Number((quotePerGrid / price).toFixed(market.quantityPrecision));
+        const qty = Number((quotePerGrid / price).toFixed(market.quantityPrecision ?? 2));
         try {
           const res = this.engine.placeOrder({
             userId: this.config.userId,
@@ -79,21 +81,30 @@ export class GridTradingBot {
           });
           this.gridOrders.set(res.order.id, { level: i, side: 'SELL', price });
           placed++;
-        } catch (e) {}
+        } catch (e) {
+          // Ignored if balance locked
+        }
       }
     }
 
     return { success: true, placedOrders: placed };
   }
 
-  public stop(): void {
+  public stop(): { success: boolean; cancelledOrders: number } {
+    if (!this.isRunning) return { success: false, cancelledOrders: 0 };
     this.isRunning = false;
+
+    let cancelled = 0;
     for (const [orderId] of this.gridOrders) {
       try {
         this.engine.cancelOrder(this.config.symbol, orderId, this.config.userId);
-      } catch (e) {}
+        cancelled++;
+      } catch (e) {
+        // May already be filled
+      }
     }
     this.gridOrders.clear();
+    return { success: true, cancelledOrders: cancelled };
   }
 
   public getStatus() {
@@ -101,8 +112,13 @@ export class GridTradingBot {
       botId: this.config.botId,
       symbol: this.config.symbol,
       running: this.isRunning,
-      activeOrders: this.gridOrders.size,
-      levels: this.gridPrices.length,
+      activeGridOrders: this.gridOrders.size,
+      gridLevels: this.config.grids,
+      range: [this.config.lowerPrice, this.config.upperPrice],
     };
+  }
+
+  public getStats() {
+    return this.getStatus();
   }
 }

@@ -14,7 +14,7 @@ export interface MarketMakerConfig {
 export class MarketMakerBot {
   private engine: MatchingEngine;
   private config: MarketMakerConfig;
-  private isRunning = false;
+  public isRunning = false;
   private timer: NodeJS.Timeout | null = null;
   private activeOrders: string[] = [];
   private currentAnchorPrice: number;
@@ -54,7 +54,6 @@ export class MarketMakerBot {
   }
 
   private stepPrice(): void {
-    // Random walk with mean reversion to baseAnchorPrice
     const deviation = (this.currentAnchorPrice - this.config.baseAnchorPrice) / this.config.baseAnchorPrice;
     const meanReversionForce = -deviation * 0.05;
     const randomShock = (Math.random() - 0.49) * (this.config.volatilityJitter / 100);
@@ -72,12 +71,14 @@ export class MarketMakerBot {
 
     this.activeOrders = [];
     const baseSpread = (this.config.spreadBps / 10000) / 2;
+    const pricePrec = market.pricePrecision ?? market.quotePrecision ?? 4;
+    const qtyPrec = market.quantityPrecision ?? market.basePrecision ?? 2;
 
     for (let i = 1; i <= this.config.levels; i++) {
       const stepOffset = (i - 1) * (this.config.levelStepBps / 10000);
-      const bidPrice = Number((this.currentAnchorPrice * (1 - baseSpread - stepOffset)).toFixed(market.pricePrecision));
-      const askPrice = Number((this.currentAnchorPrice * (1 + baseSpread + stepOffset)).toFixed(market.pricePrecision));
-      const qty = Number((this.config.quantityPerLevel * (1 + i * 0.15)).toFixed(market.quantityPrecision));
+      const bidPrice = Number((this.currentAnchorPrice * (1 - baseSpread - stepOffset)).toFixed(pricePrec));
+      const askPrice = Number((this.currentAnchorPrice * (1 + baseSpread + stepOffset)).toFixed(pricePrec));
+      const qty = Number((this.config.quantityPerLevel * (1 + i * 0.15)).toFixed(qtyPrec));
 
       // Place Bid
       try {
@@ -93,7 +94,7 @@ export class MarketMakerBot {
           this.activeOrders.push(bidRes.order.id);
         }
       } catch (e) {
-        // Ignored if balance locked
+        // Ignored
       }
 
       // Place Ask
@@ -110,7 +111,7 @@ export class MarketMakerBot {
           this.activeOrders.push(askRes.order.id);
         }
       } catch (e) {
-        // Ignored if balance locked
+        // Ignored
       }
     }
   }
@@ -132,6 +133,14 @@ export class MarketMakerBot {
       running: this.isRunning,
       anchorPrice: this.currentAnchorPrice,
       activeQuoteOrders: this.activeOrders.length,
+      spread: (this.config.spreadBps / 10000),
+      midPrice: this.currentAnchorPrice,
+      activeOrdersCount: this.activeOrders.length,
+      cycleCount: 1
     };
+  }
+
+  public getStats() {
+    return this.getStatus();
   }
 }
