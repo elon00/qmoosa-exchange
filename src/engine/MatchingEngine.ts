@@ -425,7 +425,7 @@ export class MatchingEngine {
       userId = param3;
     } else {
       orderId = param1;
-      userId = param2;
+      userId = param3 || param2;
       for (const [s, b] of this.orderBooks) {
         if (b.getOrder(orderId)) {
           symbol = s;
@@ -441,7 +441,7 @@ export class MatchingEngine {
 
     const order = book.getOrder(orderId);
     if (!order) return null;
-    if (userId && order.userId !== userId) {
+    if (!userId || order.userId !== userId) {
       return null;
     }
 

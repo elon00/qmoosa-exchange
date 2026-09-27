@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+const base = new URL(process.env.SANDBOX_URL || 'https://qmoosa-exchange.onrender.com');
+assert.equal(base.protocol, 'https:');
+assert.equal(base.hostname, 'qmoosa-exchange.onrender.com');
+const get = async path => {
+  const res = await fetch(new URL(path, base), { signal: AbortSignal.timeout(120000), redirect: 'error' });
+  return res;
+};
+const health = await get('/health');
+assert.equal(health.status, 200);
+const data = await health.json();
+assert.equal(data.realFundsEnabled, false);
+assert.equal(data.proofOfReserves, 'not_audited');
+assert.equal(data.paymentSettlement, 'disabled');
+assert.equal((await get('/sandbox.html')).status, 200);
+assert.equal((await get('/api/server.js')).status, 404);
+assert.equal((await get('/api/portfolio')).status, 401);
+assert.equal((await get('/api/v1/x402/challenge')).status, 503);
+const market = await get('/api/markets/top100');
+assert.equal(market.status, 200);
+const feed = await market.json();
+assert.ok(Array.isArray(feed.coins) && feed.coins.length > 0);
+console.log(JSON.stringify({ checkedAt: new Date().toISOString(), status: 'PASS', scope: 'read-only live sandbox gates', marketSource: feed.cacheSource, realFundsEnabled: false }, null, 2));

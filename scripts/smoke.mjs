@@ -26,6 +26,8 @@ try {
   assert.equal((await (await request('/health')).json()).realFundsEnabled, false);
   assert.equal((await request('/')).status, 200, 'Same-origin frontend');
   assert.equal((await request('/sandbox.html')).status, 200);
+  assert.equal((await request('/api/server.js')).status, 404, 'Compiled backend must not be public');
+  assert.equal((await (await request('/health')).json()).proofOfReserves, 'not_audited');
   assert.equal((await request('/api/portfolio?userId=user_alice')).status, 401);
   const alice = await (await post('/api/auth/register', { email: 'alice@smoke.test', password: 'test-password-123' })).json();
   const bob = await (await post('/api/auth/register', { email: 'bob@smoke.test', password: 'test-password-456' })).json();

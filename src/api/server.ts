@@ -298,9 +298,7 @@ if (fs.existsSync(clientDist)) {
 if (fs.existsSync(publicDir)) {
   app.use(express.static(publicDir));
 }
-if (fs.existsSync(distDir)) {
-  app.use(express.static(distDir));
-}
+
 
 // Standalone Sandbox Route
 app.get('/sandbox.html', (_req: Request, res: Response) => {
@@ -324,7 +322,7 @@ app.get('/health', (_req: Request, res: Response) => {
     realFundsEnabled: false,
     tradingPersistence: 'volatile_memory',
     paymentSettlement: 'disabled',
-    proofOfReserves: '108.5% Solvent',
+    proofOfReserves: 'not_audited',
     sandbox: {
       environment: 'FREE_TIER_DEMO_SANDBOX',
       virtualTradingOnly: true,

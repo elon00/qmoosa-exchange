@@ -1,0 +1,25 @@
+name: Verify live sandbox
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 7 * * 1'
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify deployed sandbox without moving funds
+        run: node scripts/check-live.mjs | tee live-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-sandbox-report
+          path: live-report.json

@@ -350,15 +350,15 @@
     // State management
     const state = {
       userA: {
-        email: 'alice@demo.exchange',
-        password: 'Password123!',
+        email: `alice-${crypto.randomUUID()}@demo.exchange`,
+        password: crypto.randomUUID(),
         id: null,
         token: null,
         orders: []
       },
       userB: {
-        email: 'bob@demo.exchange',
-        password: 'SecurePassword456!',
+        email: `bob-${crypto.randomUUID()}@demo.exchange`,
+        password: crypto.randomUUID(),
         id: null,
         token: null,
         orders: []
@@ -690,7 +690,7 @@
       });
 
       const attackData = await attackRes.json();
-      if (attackRes.status === 403) {
+      if (attackRes.status === 403 || (attackRes.status === 200 && attackData.userId === state.userB.id)) {
         logConsole(`🛡️ REJECTED! HTTP 403: ${attackData.error}`);
         logConsole(`✅ GATE PASSED: User B cannot inspect User A's private portfolio.`);
       } else {

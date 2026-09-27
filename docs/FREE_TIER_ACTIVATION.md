@@ -86,3 +86,14 @@ Sources (checked 2026-09-27):
 - https://render.com/docs/free
 - https://render.com/docs/deploys
 - https://www.coingecko.com/en/api/pricing
+
+## Live verification automation
+Run the **Verify live sandbox** Actions workflow manually after deployment. It also
+runs weekly, does not keep the service awake, never moves funds, and fails if
+health, isolation guards, static file boundaries or market display are unavailable.
+Its report is evidence for the listed checks only, not a production security audit.
+Local full verification remains `npm run verify`. Render should use
+`npm ci && npm run verify` as its build gate before starting `npm start`.
+
+Each evaluator browser page now generates separate random demo accounts. Reloading
+creates fresh accounts; no shared public Alice/Bob password controls visitor balances.

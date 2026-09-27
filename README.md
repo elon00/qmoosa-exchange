@@ -254,9 +254,9 @@ curl -X GET "http://localhost:4000/api/custody/reserves"
 
 ## 🚀 Free-Tier Demo Exchange & Evaluator Sandbox ($0/Month Hosting)
 
-Qmoosa Exchange is configured and deployed as a **₹0 Free-Tier Usable Demo Sandbox** on Render's Free Web Service. Both the frontend trading terminal and backend matching engine are served from a single unified Node service with zero paid resources or subscriptions.
+Qmoosa Exchange is configured for deployment as a **₹0 Free-Tier Usable Demo Sandbox** on Render's Free Web Service. Both the frontend trading terminal and backend matching engine are served from a single unified Node service with zero paid resources or subscriptions.
 
-### 🌐 Live Deployment URLs
+### 🌐 Intended Deployment URLs (verify service activation)
 - **Interactive Evaluator Sandbox**: [https://qmoosa-exchange.onrender.com/sandbox.html](https://qmoosa-exchange.onrender.com/sandbox.html) *(Local: `http://localhost:4000/sandbox.html`)*
 - **Web Trading Terminal**: [https://qmoosa-exchange.onrender.com/](https://qmoosa-exchange.onrender.com/) *(GitHub Pages Mirror: [https://elon00.github.io/qmoosa-exchange/](https://elon00.github.io/qmoosa-exchange/))*
 - **Health & Sandbox Status**: [https://qmoosa-exchange.onrender.com/health](https://qmoosa-exchange.onrender.com/health)
@@ -264,7 +264,7 @@ Qmoosa Exchange is configured and deployed as a **₹0 Free-Tier Usable Demo San
 
 > [!NOTE]
 > **Free-Tier Sleep & Lifecycle Behavior**:
-> Render free instances enter sleep mode after **15 minutes of inactivity**. The first incoming request will wake the container within 30–50 seconds. In-memory demo balances ($10k USDT + 500 TON) and orderbooks reseed cleanly on container restart.
+> Render free instances enter sleep mode after **15 minutes of inactivity**. The first incoming request will wake the container within about one minute (not guaranteed). In-memory demo balances ($10k USDT + 500 TON) and orderbooks reseed cleanly on container restart.
 > 
 > **Zero Real-Money Trading**:
 > Real on-chain custody deposits and withdrawals are strictly disabled with HTTP `403 REAL_MONEY_TRADING_DISABLED`. All accounts operate on isolated virtual demo funds. Users can replenish demo funds anytime using `/api/portfolio/reset`.
@@ -285,7 +285,7 @@ The repository includes a dedicated automated acceptance suite (`tests/freeTierA
 | **Check 6: Real-Money Custody Assertion** | Real deposit/withdraw calls return clear disabled status (403), never fake mock successes | ✅ PASS | Returns `403 REAL_MONEY_TRADING_DISABLED` |
 | **Check 7: Market Screener Integrity** | Top 100 CoinGecko coins load, query search works, and cached fallback flag guarantees ₹0 API cost | ✅ PASS | In-memory cache + fallback dataset |
 
-Run all 34 acceptance and subsystem tests locally without any paid API keys:
+Run all acceptance and subsystem tests locally without any paid API keys:
 ```bash
 npm test
 ```
@@ -309,9 +309,9 @@ npm test
 ### Rollback Strategy
 If any regression occurs:
 ```bash
-git checkout <previous-commit-hash>
-npm test
-git push origin main --force
+git revert <regression-commit-hash>
+npm run verify
+git push origin main
 ```
 
 ---
