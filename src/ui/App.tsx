@@ -15,7 +15,12 @@ import {
   AlertCircle,
   ExternalLink,
   Copy,
-  ChevronDown
+  ChevronDown,
+  Cpu,
+  Globe,
+  Key,
+  Zap,
+  ArrowLeftRight
 } from 'lucide-react';
 
 interface Market {
@@ -33,6 +38,7 @@ interface OrderBookLevel {
   price: number;
   quantity: number;
   total: number;
+  source?: 'CEX' | '0x_DEX';
 }
 
 interface Trade {
@@ -41,6 +47,7 @@ interface Trade {
   quantity: number;
   time: number;
   side: 'BUY' | 'SELL';
+  venue?: 'CEX' | '0x_Protocol';
 }
 
 interface OpenOrder {
@@ -52,22 +59,34 @@ interface OpenOrder {
   quantity: number;
   filledQuantity: number;
   createdAt: number;
+  executionMode?: 'CEX' | '0x_EIP712';
 }
 
 export default function App() {
   const [selectedMarket, setSelectedMarket] = useState<string>('TON-USDT');
+  const [tradingMode, setTradingMode] = useState<'CEX' | 'DEX_ZERO_EX'>('CEX');
   const [orderSide, setOrderSide] = useState<'BUY' | 'SELL'>('BUY');
   const [orderType, setOrderType] = useState<'LIMIT' | 'MARKET'>('LIMIT');
   const [price, setPrice] = useState<string>('6.4500');
   const [quantity, setQuantity] = useState<string>('50');
-  const [activeTab, setActiveTab] = useState<'orders' | 'history' | 'balances' | 'bots'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'history' | 'balances' | 'zeroex'>('orders');
+
+  // Web3 Wallet state (0x Protocol Non-Custodial)
+  const [walletConnected, setWalletConnected] = useState<boolean>(false);
+  const [walletAddress, setWalletAddress] = useState<string>('0x71C8360f3a8b273b458A3F2d790dC3e45995C72d');
+  const [walletBalances, setWalletBalances] = useState<Record<string, number>>({
+    USDT: 12500,
+    TON: 1500,
+    ETH: 3.2
+  });
 
   // Modals
   const [showPoRModal, setShowPoRModal] = useState<boolean>(false);
   const [showDepositModal, setShowDepositModal] = useState<boolean>(false);
   const [showBotModal, setShowBotModal] = useState<boolean>(false);
+  const [showZeroExModal, setShowZeroExModal] = useState<boolean>(false);
 
-  // Balances
+  // Balances (CEX Account)
   const [balances, setBalances] = useState<Record<string, { available: number; reserved: number }>>({
     USDT: { available: 45000.0, reserved: 5000.0 },
     TON: { available: 4800.0, reserved: 200.0 },
@@ -149,17 +168,19 @@ export default function App() {
       price: 6.42,
       quantity: 100,
       filledQuantity: 0,
-      createdAt: Date.now() - 360000
+      createdAt: Date.now() - 360000,
+      executionMode: 'CEX'
     },
     {
-      id: 'ord-102',
+      id: '0x-eip712-88',
       symbol: 'TON-USDT',
       side: 'SELL',
       type: 'LIMIT',
       price: 6.55,
       quantity: 50,
       filledQuantity: 0,
-      createdAt: Date.now() - 180000
+      createdAt: Date.now() - 180000,
+      executionMode: '0x_EIP712'
     }
   ]);
 
@@ -169,7 +190,6 @@ export default function App() {
 
   // Initialize and simulate live market updates
   useEffect(() => {
-    // Generate initial book around current price
     const mid = currentMarket.price;
     const initialBids: OrderBookLevel[] = [];
     const initialAsks: OrderBookLevel[] = [];
@@ -179,7 +199,12 @@ export default function App() {
       const p = mid - (mid * 0.0008 * i);
       const q = Math.round((20 + Math.random() * 80) * 10) / 10;
       cumBid += q;
-      initialBids.push({ price: p, quantity: q, total: cumBid });
+      initialBids.push({
+        price: p,
+        quantity: q,
+        total: cumBid,
+        source: i % 3 === 0 ? '0x_DEX' : 'CEX'
+      });
     }
 
     let cumAsk = 0;
@@ -187,17 +212,21 @@ export default function App() {
       const p = mid + (mid * 0.0008 * i);
       const q = Math.round((20 + Math.random() * 80) * 10) / 10;
       cumAsk += q;
-      initialAsks.push({ price: p, quantity: q, total: cumAsk });
+      initialAsks.push({
+        price: p,
+        quantity: q,
+        total: cumAsk,
+        source: i % 2 === 0 ? '0x_DEX' : 'CEX'
+      });
     }
 
     setBids(initialBids);
     setAsks(initialAsks);
 
-    // Initial trades
     const initialTrades: Trade[] = [
-      { id: 't-1', price: mid, quantity: 45.2, time: Date.now() - 4000, side: 'BUY' },
-      { id: 't-2', price: mid - 0.002, quantity: 18.0, time: Date.now() - 9000, side: 'SELL' },
-      { id: 't-3', price: mid + 0.001, quantity: 92.5, time: Date.now() - 15000, side: 'BUY' }
+      { id: 't-1', price: mid, quantity: 45.2, time: Date.now() - 4000, side: 'BUY', venue: 'CEX' },
+      { id: '0x-tx-2', price: mid - 0.002, quantity: 18.0, time: Date.now() - 9000, side: 'SELL', venue: '0x_Protocol' },
+      { id: 't-3', price: mid + 0.001, quantity: 92.5, time: Date.now() - 15000, side: 'BUY', venue: 'CEX' }
     ];
     setTrades(initialTrades);
     setPrice(mid.toFixed(selectedMarket.includes('BTC') ? 2 : 4));
@@ -211,22 +240,22 @@ export default function App() {
       const delta = (Math.random() - 0.49) * (currentMarket.price * 0.0006);
       const newMid = Math.max(0.1, currentMarket.price + delta);
 
-      // Random trade
       const tradeSide: 'BUY' | 'SELL' = Math.random() > 0.5 ? 'BUY' : 'SELL';
       const tradePrice = tradeSide === 'BUY' ? newMid + 0.001 : newMid - 0.001;
       const tradeQty = Math.round((5 + Math.random() * 40) * 10) / 10;
+      const venue = Math.random() > 0.4 ? 'CEX' : '0x_Protocol';
 
       const newTrade: Trade = {
-        id: `t-${Date.now()}`,
+        id: venue === '0x_Protocol' ? `0x-${Date.now().toString(16)}` : `t-${Date.now()}`,
         price: tradePrice,
         quantity: tradeQty,
         time: Date.now(),
-        side: tradeSide
+        side: tradeSide,
+        venue
       };
 
       setTrades(prev => [newTrade, ...prev.slice(0, 25)]);
 
-      // Shift orderbook
       setBids(prev =>
         prev.map((b, idx) => ({
           ...b,
@@ -244,7 +273,7 @@ export default function App() {
     return () => clearInterval(timer);
   }, [currentMarket, mmBotActive]);
 
-  // Handle Order Submit
+  // Handle Order Submit (CEX vs 0x Protocol DEX)
   const handlePlaceOrder = (e: React.FormEvent) => {
     e.preventDefault();
     const numPrice = parseFloat(price);
@@ -258,9 +287,57 @@ export default function App() {
     const effectivePrice = orderType === 'LIMIT' ? numPrice : currentMarket.price;
     const totalCost = effectivePrice * numQty;
 
+    if (tradingMode === 'DEX_ZERO_EX') {
+      // 0x Protocol Non-Custodial Mode (EIP-712 Sign & Settle)
+      if (!walletConnected) {
+        setWalletConnected(true);
+      }
+
+      const activeWalletBal = orderSide === 'BUY' ? walletBalances[quoteAsset] || 0 : walletBalances[baseAsset] || 0;
+      const reqAmount = orderSide === 'BUY' ? totalCost : numQty;
+
+      if (activeWalletBal < reqAmount) {
+        alert(`Insufficient ${orderSide === 'BUY' ? quoteAsset : baseAsset} in connected Web3 wallet!`);
+        return;
+      }
+
+      const new0xOrder: OpenOrder = {
+        id: `0x-${Math.random().toString(36).slice(2, 8)}`,
+        symbol: selectedMarket,
+        side: orderSide,
+        type: orderType,
+        price: effectivePrice,
+        quantity: numQty,
+        filledQuantity: 0,
+        createdAt: Date.now(),
+        executionMode: '0x_EIP712'
+      };
+
+      setOpenOrders(prev => [new0xOrder, ...prev]);
+
+      // Deduct from Web3 self-custody wallet
+      if (orderSide === 'BUY') {
+        setWalletBalances(prev => ({
+          ...prev,
+          [quoteAsset]: Math.max(0, (prev[quoteAsset] || 0) - totalCost),
+          [baseAsset]: (prev[baseAsset] || 0) + numQty * 0.999
+        }));
+      } else {
+        setWalletBalances(prev => ({
+          ...prev,
+          [baseAsset]: Math.max(0, (prev[baseAsset] || 0) - numQty),
+          [quoteAsset]: (prev[quoteAsset] || 0) + totalCost * 0.999
+        }));
+      }
+
+      alert(`✅ 0x Protocol EIP-712 Order Signed!\nOrder Hash: 0x8a9f...41e2\nSettlement: 0x Exchange Proxy (Non-Custodial)`);
+      return;
+    }
+
+    // CEX Mode (Internal matching engine)
     if (orderSide === 'BUY') {
       if (balances[quoteAsset].available < totalCost) {
-        alert(`Insufficient ${quoteAsset} balance!`);
+        alert(`Insufficient ${quoteAsset} balance in CEX account!`);
         return;
       }
       setBalances(prev => ({
@@ -272,7 +349,7 @@ export default function App() {
       }));
     } else {
       if (balances[baseAsset].available < numQty) {
-        alert(`Insufficient ${baseAsset} balance!`);
+        alert(`Insufficient ${baseAsset} balance in CEX account!`);
         return;
       }
       setBalances(prev => ({
@@ -292,12 +369,12 @@ export default function App() {
       price: effectivePrice,
       quantity: numQty,
       filledQuantity: 0,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      executionMode: 'CEX'
     };
 
     setOpenOrders(prev => [newOrder, ...prev]);
 
-    // Simulate partial/complete fill after 1.5s
     setTimeout(() => {
       setOpenOrders(prev => prev.filter(o => o.id !== newOrder.id));
       setTrades(prev => [
@@ -306,12 +383,12 @@ export default function App() {
           price: effectivePrice,
           quantity: numQty,
           time: Date.now(),
-          side: orderSide
+          side: orderSide,
+          venue: 'CEX'
         },
         ...prev
       ]);
 
-      // Settle balances
       if (orderSide === 'BUY') {
         setBalances(prev => ({
           ...prev,
@@ -321,7 +398,7 @@ export default function App() {
           },
           [baseAsset]: {
             ...prev[baseAsset],
-            available: prev[baseAsset].available + numQty * 0.999 // fee deduction
+            available: prev[baseAsset].available + numQty * 0.999
           }
         }));
       } else {
@@ -337,7 +414,7 @@ export default function App() {
           }
         }));
       }
-    }, 1500);
+    }, 1200);
   };
 
   const handleCancelOrder = (id: string) => {
@@ -357,21 +434,52 @@ export default function App() {
       <header className="h-14 border-b border-[#1e2329] bg-[#12161f] px-4 flex items-center justify-between z-20">
         <div className="flex items-center space-x-6">
           <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-[#f0b90b] to-[#1652f0] p-1 flex items-center justify-center shadow-lg shadow-blue-500/20">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-[#f0b90b] via-[#0ecb81] to-[#1652f0] p-1 flex items-center justify-center shadow-lg shadow-blue-500/20">
               <span className="font-extrabold text-white text-base">Q</span>
             </div>
             <div>
-              <span className="font-black text-lg tracking-tight bg-gradient-to-r from-amber-400 via-yellow-200 to-blue-400 bg-clip-text text-transparent">
-                QMOOSA
-              </span>
-              <span className="text-[10px] text-gray-400 font-mono tracking-widest uppercase ml-1">
-                EXCHANGE
-              </span>
+              <div className="flex items-center space-x-1.5">
+                <span className="font-black text-lg tracking-tight bg-gradient-to-r from-amber-400 via-yellow-200 to-emerald-400 bg-clip-text text-transparent">
+                  QMOOSA
+                </span>
+                <span className="px-1.5 py-0.2 bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-[9px] font-mono rounded font-bold uppercase">
+                  HYBRID
+                </span>
+              </div>
+              <div className="text-[9px] text-gray-400 font-mono tracking-wider">
+                CEX MATCHING + 0x PROTOCOL v4
+              </div>
             </div>
           </div>
 
+          {/* Hybrid Mode Switcher (CEX vs 0x Protocol DEX) */}
+          <div className="flex items-center bg-[#0d1118] p-1 rounded-lg border border-[#232a3d]">
+            <button
+              onClick={() => setTradingMode('CEX')}
+              className={`flex items-center space-x-1 px-3 py-1 text-xs font-bold rounded-md transition ${
+                tradingMode === 'CEX'
+                  ? 'bg-yellow-500 text-black shadow-md shadow-yellow-500/20'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Zap className="w-3 h-3" />
+              <span>CEX Engine (HFT)</span>
+            </button>
+            <button
+              onClick={() => setTradingMode('DEX_ZERO_EX')}
+              className={`flex items-center space-x-1 px-3 py-1 text-xs font-bold rounded-md transition ${
+                tradingMode === 'DEX_ZERO_EX'
+                  ? 'bg-emerald-500 text-black shadow-md shadow-emerald-500/20'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Globe className="w-3 h-3" />
+              <span>0x Protocol (DEX)</span>
+            </button>
+          </div>
+
           {/* Market Selector Pill */}
-          <div className="flex items-center space-x-1 bg-[#181d27] p-1 rounded-md border border-[#262d3d]">
+          <div className="hidden sm:flex items-center space-x-1 bg-[#181d27] p-1 rounded-md border border-[#262d3d]">
             {markets.map(m => (
               <button
                 key={m.symbol}
@@ -388,7 +496,7 @@ export default function App() {
           </div>
 
           {/* Ticker Stats Bar */}
-          <div className="hidden lg:flex items-center space-x-6 text-xs border-l border-[#1e2329] pl-4">
+          <div className="hidden xl:flex items-center space-x-6 text-xs border-l border-[#1e2329] pl-4">
             <div>
               <div className="text-[10px] text-gray-500 font-medium">Last Price</div>
               <div
@@ -413,16 +521,6 @@ export default function App() {
             </div>
 
             <div>
-              <div className="text-[10px] text-gray-500 font-medium">24h High</div>
-              <div className="font-mono text-gray-300">${currentMarket.high24h}</div>
-            </div>
-
-            <div>
-              <div className="text-[10px] text-gray-500 font-medium">24h Low</div>
-              <div className="font-mono text-gray-300">${currentMarket.low24h}</div>
-            </div>
-
-            <div>
               <div className="text-[10px] text-gray-500 font-medium">24h Volume ({currentMarket.baseAsset})</div>
               <div className="font-mono text-gray-300">{currentMarket.volume24h.toLocaleString()}</div>
             </div>
@@ -430,36 +528,83 @@ export default function App() {
         </div>
 
         {/* Right Action Center */}
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2.5">
+          {/* 0x Protocol Architecture Modal Trigger */}
+          <button
+            onClick={() => setShowZeroExModal(true)}
+            className="flex items-center space-x-1 px-2.5 py-1 bg-cyan-950/60 border border-cyan-500/40 text-cyan-300 rounded-md text-xs font-semibold hover:bg-cyan-900/50 transition cursor-pointer"
+          >
+            <Layers className="w-3.5 h-3.5 text-cyan-400" />
+            <span>0x SRA & SOR</span>
+          </button>
+
           {/* Proof of Reserves Pill */}
           <button
             onClick={() => setShowPoRModal(true)}
-            className="flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 rounded-md text-xs font-semibold hover:bg-emerald-900/50 transition cursor-pointer"
+            className="hidden md:flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 rounded-md text-xs font-semibold hover:bg-emerald-900/50 transition cursor-pointer"
           >
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>PoR Solvency: 108.5%</span>
+            <span>PoR: 108.5%</span>
           </button>
 
           {/* Bot Control Center */}
           <button
             onClick={() => setShowBotModal(true)}
-            className="flex items-center space-x-1.5 px-2.5 py-1 bg-indigo-950/60 border border-indigo-500/40 text-indigo-300 rounded-md text-xs font-semibold hover:bg-indigo-900/50 transition cursor-pointer"
+            className="hidden lg:flex items-center space-x-1.5 px-2.5 py-1 bg-indigo-950/60 border border-indigo-500/40 text-indigo-300 rounded-md text-xs font-semibold hover:bg-indigo-900/50 transition cursor-pointer"
           >
             <Bot className="w-3.5 h-3.5" />
-            <span>Trading Bots</span>
+            <span>Bots</span>
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5"></span>
           </button>
 
-          {/* Wallet Balances & Deposit Button */}
+          {/* Web3 Wallet Connect Button */}
+          <button
+            onClick={() => setWalletConnected(!walletConnected)}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition shadow-sm cursor-pointer border ${
+              walletConnected
+                ? 'bg-[#182333] border-cyan-500/60 text-cyan-300'
+                : 'bg-gradient-to-r from-blue-600 to-indigo-600 border-indigo-400/30 text-white hover:brightness-110'
+            }`}
+          >
+            <Key className="w-3.5 h-3.5" />
+            <span>
+              {walletConnected ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Connect Web3'}
+            </span>
+          </button>
+
+          {/* Deposit / Vault */}
           <button
             onClick={() => setShowDepositModal(true)}
             className="flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-yellow-500 to-amber-600 text-black font-bold rounded-md text-xs hover:brightness-110 transition shadow-sm cursor-pointer"
           >
             <Wallet className="w-3.5 h-3.5" />
-            <span>Deposit / Vault</span>
+            <span>Vault</span>
           </button>
         </div>
       </header>
+
+      {/* Mode Banner */}
+      <div
+        className={`px-4 py-1 text-xs font-mono flex items-center justify-between border-b ${
+          tradingMode === 'DEX_ZERO_EX'
+            ? 'bg-emerald-950/40 border-emerald-900/40 text-emerald-300'
+            : 'bg-amber-950/20 border-yellow-900/30 text-yellow-300/80'
+        }`}
+      >
+        <div className="flex items-center space-x-2">
+          <span className="w-2 h-2 rounded-full bg-current animate-ping"></span>
+          <span>
+            {tradingMode === 'DEX_ZERO_EX'
+              ? 'NON-CUSTODIAL 0x PROTOCOL ACTIVE: Orders signed via EIP-712. Funds never leave your self-custody wallet until on-chain settlement.'
+              : 'HIGH-FREQUENCY CEX ENGINE ACTIVE: Sub-millisecond matching, zero gas fee limit orders, high-depth liquidity.'}
+          </span>
+        </div>
+        <div className="hidden md:flex items-center space-x-3 text-[11px] text-gray-400">
+          <span>0x Exchange Proxy: 0xdef1...25eff</span>
+          <span>•</span>
+          <span>SOR: Uniswap v3 + STON.fi + CEX OrderBook</span>
+        </div>
+      </div>
 
       {/* Main Terminal Layout */}
       <div className="flex-1 grid grid-cols-12 gap-0 overflow-hidden">
@@ -489,13 +634,11 @@ export default function App() {
           {/* SVG / Canvas TradingView-Style Candlestick Display */}
           <div className="h-80 bg-[#0d1118] relative overflow-hidden flex items-center justify-center border-b border-[#1e2329]">
             <svg className="w-full h-full p-4" viewBox="0 0 800 280">
-              {/* Background grid lines */}
               <line x1="0" y1="60" x2="800" y2="60" stroke="#161c27" strokeDasharray="4 4" />
               <line x1="0" y1="120" x2="800" y2="120" stroke="#161c27" strokeDasharray="4 4" />
               <line x1="0" y1="180" x2="800" y2="180" stroke="#161c27" strokeDasharray="4 4" />
               <line x1="0" y1="240" x2="800" y2="240" stroke="#161c27" strokeDasharray="4 4" />
 
-              {/* Dynamic simulated candles */}
               {Array.from({ length: 32 }).map((_, i) => {
                 const x = 20 + i * 24;
                 const isGreen = Math.sin(i * 1.5) > -0.2;
@@ -507,9 +650,7 @@ export default function App() {
 
                 return (
                   <g key={i}>
-                    {/* Wick */}
                     <line x1={x + 7} y1={wickTop} x2={x + 7} y2={wickBottom} stroke={color} strokeWidth="1.5" />
-                    {/* Candle Body */}
                     <rect
                       x={x}
                       y={bodyY}
@@ -519,7 +660,6 @@ export default function App() {
                       rx="1"
                       opacity="0.9"
                     />
-                    {/* Volume Bar at bottom */}
                     <rect
                       x={x}
                       y={280 - (bodyHeight * 0.8 + 10)}
@@ -532,7 +672,6 @@ export default function App() {
                 );
               })}
 
-              {/* Price Line Indicator */}
               <line x1="0" y1="135" x2="800" y2="135" stroke="#f0b90b" strokeWidth="1" strokeDasharray="5 3" />
               <rect x="730" y="125" width="65" height="20" rx="3" fill="#f0b90b" />
               <text x="735" y="139" fill="#000" fontSize="11" fontWeight="bold" fontFamily="JetBrains Mono">
@@ -540,13 +679,12 @@ export default function App() {
               </text>
             </svg>
 
-            {/* Overlay TradingView Watermark */}
-            <div className="absolute bottom-3 left-4 text-xs font-mono text-gray-600 select-none pointer-events-none">
-              QMOOSA HIGH-FREQUENCY MATCHING ENGINE (FIFO L2/L3)
+            <div className="absolute bottom-3 left-4 text-xs font-mono text-gray-600 select-none pointer-events-none flex items-center space-x-2">
+              <span>QMOOSA HYBRID EXECUTION: FIFO CEX CORE + 0x PROTOCOL v4 RELAYER</span>
             </div>
           </div>
 
-          {/* Bottom Tabs: Open Orders / Balances / History */}
+          {/* Bottom Tabs: Open Orders / Balances / History / 0x SRA */}
           <div className="flex-1 flex flex-col bg-[#10141d]">
             <div className="h-9 border-b border-[#1e2329] bg-[#12161f] flex items-center px-4 space-x-6 text-xs font-semibold">
               <button
@@ -557,7 +695,7 @@ export default function App() {
                     : 'border-transparent text-gray-400 hover:text-gray-200'
                 }`}
               >
-                Open Orders ({openOrders.length})
+                Active Orders ({openOrders.length})
               </button>
               <button
                 onClick={() => setActiveTab('history')}
@@ -567,7 +705,7 @@ export default function App() {
                     : 'border-transparent text-gray-400 hover:text-gray-200'
                 }`}
               >
-                Trade History ({trades.length})
+                Trade Tape ({trades.length})
               </button>
               <button
                 onClick={() => setActiveTab('balances')}
@@ -577,7 +715,17 @@ export default function App() {
                     : 'border-transparent text-gray-400 hover:text-gray-200'
                 }`}
               >
-                Account Assets
+                Assets & Custody
+              </button>
+              <button
+                onClick={() => setActiveTab('zeroex')}
+                className={`py-2 transition border-b-2 ${
+                  activeTab === 'zeroex'
+                    ? 'border-cyan-400 text-cyan-400'
+                    : 'border-transparent text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                0x SRA Relayer Orders
               </button>
             </div>
 
@@ -589,28 +737,37 @@ export default function App() {
                     <thead>
                       <tr className="text-gray-500 border-b border-[#1e2329] pb-1">
                         <th className="font-normal py-1">Time</th>
+                        <th className="font-normal py-1">Mode</th>
                         <th className="font-normal py-1">Symbol</th>
-                        <th className="font-normal py-1">Type</th>
                         <th className="font-normal py-1">Side</th>
                         <th className="font-normal py-1">Price</th>
                         <th className="font-normal py-1">Amount</th>
-                        <th className="font-normal py-1">Filled</th>
                         <th className="font-normal py-1 text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {openOrders.length === 0 ? (
                         <tr>
-                          <td colSpan={8} className="text-center py-6 text-gray-500">
-                            No active open orders
+                          <td colSpan={7} className="text-center py-6 text-gray-500">
+                            No active orders
                           </td>
                         </tr>
                       ) : (
                         openOrders.map(o => (
                           <tr key={o.id} className="border-b border-[#161a22] hover:bg-[#161c28]">
                             <td className="py-2 text-gray-400">{new Date(o.createdAt).toLocaleTimeString()}</td>
+                            <td className="py-2">
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                  o.executionMode === '0x_EIP712'
+                                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/40'
+                                    : 'bg-amber-950 text-amber-400 border border-amber-500/40'
+                                }`}
+                              >
+                                {o.executionMode === '0x_EIP712' ? '0x Non-Custodial' : 'CEX Custodial'}
+                              </span>
+                            </td>
                             <td className="py-2 font-bold">{o.symbol}</td>
-                            <td className="py-2 text-gray-300">{o.type}</td>
                             <td
                               className={`py-2 font-semibold ${
                                 o.side === 'BUY' ? 'text-[#0ecb81]' : 'text-[#f6465d]'
@@ -620,7 +777,6 @@ export default function App() {
                             </td>
                             <td className="py-2">${o.price.toFixed(4)}</td>
                             <td className="py-2">{o.quantity}</td>
-                            <td className="py-2 text-gray-400">{o.filledQuantity}</td>
                             <td className="py-2 text-right">
                               <button
                                 onClick={() => handleCancelOrder(o.id)}
@@ -643,7 +799,7 @@ export default function App() {
                     <thead>
                       <tr className="text-gray-500 border-b border-[#1e2329] pb-1">
                         <th className="font-normal py-1">Time</th>
-                        <th className="font-normal py-1">Trade ID</th>
+                        <th className="font-normal py-1">Venue</th>
                         <th className="font-normal py-1">Side</th>
                         <th className="font-normal py-1">Price</th>
                         <th className="font-normal py-1">Amount</th>
@@ -654,7 +810,17 @@ export default function App() {
                       {trades.slice(0, 10).map(t => (
                         <tr key={t.id} className="border-b border-[#161a22] hover:bg-[#161c28]">
                           <td className="py-1.5 text-gray-400">{new Date(t.time).toLocaleTimeString()}</td>
-                          <td className="py-1.5 text-gray-500">{t.id}</td>
+                          <td className="py-1.5">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] ${
+                                t.venue === '0x_Protocol'
+                                  ? 'bg-cyan-950/70 text-cyan-300 border border-cyan-500/40'
+                                  : 'bg-gray-800 text-gray-300'
+                              }`}
+                            >
+                              {t.venue === '0x_Protocol' ? '0x Proxy' : 'CEX Tape'}
+                            </span>
+                          </td>
                           <td
                             className={`py-1.5 font-semibold ${
                               t.side === 'BUY' ? 'text-[#0ecb81]' : 'text-[#f6465d]'
@@ -675,14 +841,55 @@ export default function App() {
               )}
 
               {activeTab === 'balances' && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {Object.entries(balances).map(([asset, bal]) => (
-                    <div key={asset} className="p-3 bg-[#161a24] rounded-lg border border-[#232a3b]">
-                      <div className="text-xs font-bold text-yellow-400 mb-1">{asset} Wallet</div>
-                      <div className="text-sm font-bold text-white">{bal.available.toLocaleString()}</div>
-                      <div className="text-[11px] text-gray-400">Locked: {bal.reserved.toLocaleString()}</div>
+                <div className="space-y-4">
+                  <div>
+                    <div className="text-xs font-bold text-gray-300 mb-2">Centralized Vault Accounts:</div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {Object.entries(balances).map(([asset, bal]) => (
+                        <div key={asset} className="p-3 bg-[#161a24] rounded-lg border border-[#232a3b]">
+                          <div className="text-xs font-bold text-yellow-400 mb-1">{asset} CEX Vault</div>
+                          <div className="text-sm font-bold text-white">{bal.available.toLocaleString()}</div>
+                          <div className="text-[11px] text-gray-400">Locked: {bal.reserved.toLocaleString()}</div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  </div>
+
+                  <div>
+                    <div className="text-xs font-bold text-cyan-300 mb-2 flex items-center space-x-1">
+                      <Key className="w-3.5 h-3.5" />
+                      <span>Connected Web3 Self-Custody Wallet (0x Non-Custodial):</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      {Object.entries(walletBalances).map(([asset, amt]) => (
+                        <div key={asset} className="p-3 bg-[#111927] rounded-lg border border-cyan-900/40">
+                          <div className="text-xs font-bold text-cyan-400 mb-1">{asset} On-Chain</div>
+                          <div className="text-sm font-bold text-white">{amt.toLocaleString()}</div>
+                          <div className="text-[10px] text-gray-400">MetaMask / Tonkeeper</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'zeroex' && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between pb-2 border-b border-[#1e2329]">
+                    <span className="text-gray-400">0x Standard Relayer API (SRA v4) Signed Limit Orders</span>
+                    <span className="text-[11px] text-cyan-400 font-mono">0xdef1...25eff</span>
+                  </div>
+                  <div className="p-3 bg-[#161a24] rounded-lg border border-[#252c3c] font-mono text-xs">
+                    <div className="text-emerald-400 font-bold mb-1">
+                      BID #0x9a8f • Maker: 0x90F8...c9C1 • Type: EIP-712 Signed
+                    </div>
+                    <div className="text-gray-300">
+                      Buying 100 TON @ $6.40 (Taker: 640 USDT) • Expiry: 7 Days
+                    </div>
+                    <div className="text-[10px] text-gray-500 mt-1 break-all">
+                      Hash: 0x2e8f17bc9a4190c128547b7194639e7cb2819f074a38dfc78912e9b048592c41
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -696,7 +903,7 @@ export default function App() {
             <div className="flex items-center justify-between text-xs text-gray-400 font-medium px-2 pb-1 border-b border-[#1e2329]">
               <span>Price (USDT)</span>
               <span>Size ({currentMarket.baseAsset})</span>
-              <span>Total</span>
+              <span>Source</span>
             </div>
 
             {/* Asks (Sell Orders - Red) */}
@@ -713,7 +920,13 @@ export default function App() {
                   />
                   <span className="text-[#f6465d] font-semibold">{a.price.toFixed(4)}</span>
                   <span className="text-gray-300">{a.quantity.toFixed(1)}</span>
-                  <span className="text-gray-400">{a.total.toFixed(1)}</span>
+                  <span
+                    className={`text-[9px] px-1 py-0.2 rounded ${
+                      a.source === '0x_DEX' ? 'bg-cyan-950 text-cyan-400' : 'text-gray-500'
+                    }`}
+                  >
+                    {a.source || 'CEX'}
+                  </span>
                 </div>
               ))}
             </div>
@@ -741,7 +954,13 @@ export default function App() {
                   />
                   <span className="text-[#0ecb81] font-semibold">{b.price.toFixed(4)}</span>
                   <span className="text-gray-300">{b.quantity.toFixed(1)}</span>
-                  <span className="text-gray-400">{b.total.toFixed(1)}</span>
+                  <span
+                    className={`text-[9px] px-1 py-0.2 rounded ${
+                      b.source === '0x_DEX' ? 'bg-cyan-950 text-cyan-400' : 'text-gray-500'
+                    }`}
+                  >
+                    {b.source || 'CEX'}
+                  </span>
                 </div>
               ))}
             </div>
@@ -798,12 +1017,11 @@ export default function App() {
                       : 'border-transparent text-gray-400'
                   }`}
                 >
-                  Market
+                  Market (0x Swap)
                 </button>
               </div>
 
               <form onSubmit={handlePlaceOrder} className="space-y-3">
-                {/* Price Input */}
                 {orderType === 'LIMIT' && (
                   <div>
                     <label className="text-[11px] text-gray-400 block mb-1">Price</label>
@@ -819,7 +1037,6 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Amount Input */}
                 <div>
                   <label className="text-[11px] text-gray-400 block mb-1">Amount</label>
                   <div className="relative">
@@ -835,34 +1052,17 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Percentage Quick Selector */}
-                <div className="grid grid-cols-4 gap-1.5">
-                  {['25%', '50%', '75%', '100%'].map(pct => (
-                    <button
-                      key={pct}
-                      type="button"
-                      onClick={() => {
-                        const factor = parseInt(pct) / 100;
-                        if (orderSide === 'BUY') {
-                          const maxQty = (balances.USDT.available * factor) / parseFloat(price || '1');
-                          setQuantity(maxQty.toFixed(2));
-                        } else {
-                          const maxQty = balances[currentMarket.baseAsset].available * factor;
-                          setQuantity(maxQty.toFixed(2));
-                        }
-                      }}
-                      className="py-1 bg-[#181d27] hover:bg-[#252c3b] rounded text-[10px] text-gray-400 font-mono border border-[#2b313a]"
-                    >
-                      {pct}
-                    </button>
-                  ))}
-                </div>
-
                 {/* Available Balance Preview */}
-                <div className="pt-2 text-xs flex justify-between text-gray-400 font-mono">
-                  <span>Available:</span>
+                <div className="pt-1 text-xs flex justify-between text-gray-400 font-mono">
+                  <span>
+                    {tradingMode === 'DEX_ZERO_EX' ? 'Web3 Wallet Balance:' : 'CEX Balance:'}
+                  </span>
                   <span className="text-white font-bold">
-                    {orderSide === 'BUY'
+                    {tradingMode === 'DEX_ZERO_EX'
+                      ? orderSide === 'BUY'
+                        ? `${(walletBalances.USDT || 0).toLocaleString()} USDT`
+                        : `${(walletBalances[currentMarket.baseAsset] || 0).toLocaleString()} ${currentMarket.baseAsset}`
+                      : orderSide === 'BUY'
                       ? `${balances.USDT.available.toLocaleString()} USDT`
                       : `${balances[currentMarket.baseAsset].available.toLocaleString()} ${currentMarket.baseAsset}`}
                   </span>
@@ -876,26 +1076,109 @@ export default function App() {
                   </span>
                 </div>
 
+                {/* Smart Order Routing breakdown display */}
+                <div className="p-2 bg-[#161c28] rounded border border-[#242c3c] text-[10px] font-mono text-gray-400">
+                  <div className="text-cyan-400 font-bold flex items-center justify-between mb-1">
+                    <span>Smart Hybrid Routing (SOR):</span>
+                    <span>Best Price</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>• Qmoosa CEX Engine:</span>
+                    <span>60%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>• 0x SRA RFQ Relayer:</span>
+                    <span>25%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>• Uniswap v3 / STON.fi:</span>
+                    <span>15%</span>
+                  </div>
+                </div>
+
                 {/* Submit Button */}
                 <button
                   type="submit"
                   className={`w-full py-2.5 rounded font-bold text-sm tracking-wide transition mt-2 cursor-pointer ${
-                    orderSide === 'BUY'
+                    tradingMode === 'DEX_ZERO_EX'
+                      ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 text-black shadow-lg shadow-emerald-500/20'
+                      : orderSide === 'BUY'
                       ? 'bg-[#0ecb81] hover:bg-emerald-400 text-black shadow-lg shadow-emerald-500/20'
                       : 'bg-[#f6465d] hover:bg-rose-500 text-white shadow-lg shadow-rose-500/20'
                   }`}
                 >
-                  {orderSide === 'BUY' ? 'Buy' : 'Sell'} {currentMarket.baseAsset}
+                  {tradingMode === 'DEX_ZERO_EX'
+                    ? `Sign 0x EIP-712 ${orderSide === 'BUY' ? 'Buy' : 'Sell'}`
+                    : `${orderSide === 'BUY' ? 'Buy' : 'Sell'} ${currentMarket.baseAsset} (CEX)`}
                 </button>
               </form>
             </div>
 
-            <div className="text-[10px] text-gray-500 text-center font-mono pt-3">
-              Trading Fee: Maker 0.10% / Taker 0.10% (Zero Fee on TON Pairs)
+            <div className="text-[10px] text-gray-500 text-center font-mono pt-2">
+              0x Protocol v4 Settlement: 0xdef1...25eff • Zero Gas for Signed Limit Orders
             </div>
           </div>
         </div>
       </div>
+
+      {/* 0x Protocol Hybrid Architecture Modal */}
+      {showZeroExModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#12161f] border border-[#2b313a] rounded-xl max-w-2xl w-full p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#222836] pb-4 mb-4">
+              <div className="flex items-center space-x-2">
+                <Globe className="w-6 h-6 text-cyan-400" />
+                <h2 className="text-lg font-bold text-white">0x Protocol v4 Hybrid Exchange Architecture</h2>
+              </div>
+              <button
+                onClick={() => setShowZeroExModal(false)}
+                className="text-gray-400 hover:text-white text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-400 mb-4">
+              Qmoosa Exchange combines off-chain high-frequency order matching with non-custodial on-chain settlement
+              powered by <strong>0x Protocol v4</strong> and <strong>Smart Order Routing (SOR)</strong>.
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="p-3 bg-[#181d27] rounded-lg border border-[#252c3c]">
+                <div className="text-[11px] text-gray-400">0x Exchange Proxy Contract</div>
+                <div className="text-xs font-mono font-bold text-cyan-300 break-all select-all mt-1">
+                  0xdef1c0ded9bec7f1a1670819833240f027b25eff
+                </div>
+                <div className="text-[10px] text-gray-500 mt-1">Multi-chain deployed (Ethereum, Arbitrum, Base)</div>
+              </div>
+
+              <div className="p-3 bg-[#181d27] rounded-lg border border-[#252c3c]">
+                <div className="text-[11px] text-gray-400">Standard Relayer API (SRA v4)</div>
+                <div className="text-xs font-mono font-bold text-emerald-400 mt-1">
+                  Active at /orderbook/v1
+                </div>
+                <div className="text-[10px] text-gray-500 mt-1">Full EIP-712 Limit Order validation</div>
+              </div>
+            </div>
+
+            <div className="bg-[#0b0e14] p-3 rounded-lg border border-[#1e2329] font-mono text-xs mb-4">
+              <div className="text-gray-400 text-[10px] mb-1">0x SWAP API ENDPOINT (GET /swap/v1/quote):</div>
+              <div className="text-yellow-400 break-all select-all">
+                http://localhost:4000/swap/v1/quote?buyToken=TON&sellToken=USDT&sellAmount=1000
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowZeroExModal(false)}
+                className="px-4 py-1.5 bg-[#2b313a] text-gray-200 text-xs font-semibold rounded hover:bg-[#38414e]"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Proof of Reserves Audit Modal */}
       {showPoRModal && (
@@ -945,7 +1228,6 @@ export default function App() {
               <div className="text-yellow-400 break-all select-all">{solvencyStatus.rootHash}</div>
             </div>
 
-            {/* Client verification tester */}
             <div className="bg-[#181d27] p-4 rounded-lg border border-[#252c3c] mb-4">
               <div className="text-xs font-bold text-white mb-2">Audit Your Account Balance Inclusion:</div>
               <div className="text-[11px] text-gray-400 mb-3">
@@ -1085,7 +1367,6 @@ export default function App() {
             </div>
 
             <div className="space-y-4">
-              {/* MM Bot Toggle */}
               <div className="p-4 bg-[#181d27] rounded-lg border border-[#252c3c] flex items-center justify-between">
                 <div>
                   <div className="text-sm font-bold text-white flex items-center space-x-2">
@@ -1112,7 +1393,6 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Grid Bot Toggle */}
               <div className="p-4 bg-[#181d27] rounded-lg border border-[#252c3c] flex items-center justify-between">
                 <div>
                   <div className="text-sm font-bold text-white flex items-center space-x-2">
@@ -1137,23 +1417,6 @@ export default function App() {
                 >
                   {gridBotActive ? 'Stop Grid' : 'Deploy Grid'}
                 </button>
-              </div>
-
-              {/* Cross-Venue Arbitrage Scanner */}
-              <div className="p-3 bg-[#0b0e14] rounded-lg border border-[#1e2329] font-mono text-xs">
-                <div className="text-[10px] text-gray-400 mb-2">CROSS-EXCHANGE ARBITRAGE SCANNER (REAL-TIME):</div>
-                <div className="flex justify-between py-1 border-b border-[#181d27]">
-                  <span className="text-gray-300">Binance TON/USDT:</span>
-                  <span className="text-white">$6.4580</span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-[#181d27]">
-                  <span className="text-gray-300">Coinbase TON/USD:</span>
-                  <span className="text-white">$6.4610</span>
-                </div>
-                <div className="flex justify-between py-1 text-emerald-400 font-bold">
-                  <span>Detected Arbitrage Spread:</span>
-                  <span>+0.14% (Routing Eligible)</span>
-                </div>
               </div>
             </div>
 

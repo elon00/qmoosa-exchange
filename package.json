@@ -37,6 +37,7 @@
     "lucide-react": "^0.546.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "viem": "^2.56.9",
     "ws": "^8.18.0"
   },
   "devDependencies": {

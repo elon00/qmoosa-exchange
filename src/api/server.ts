@@ -11,6 +11,11 @@ import { GridTradingBot } from '../automation/GridTradingBot.js';
 import { ArbitrageRouter } from '../automation/ArbitrageRouter.js';
 import { createBinanceRouter } from './binanceAdapter.js';
 import { createCoinbaseRouter } from './coinbaseAdapter.js';
+import { ZeroExOrderBook } from '../hybrid/ZeroExOrderBook.js';
+import { HybridOrderRouter } from '../hybrid/HybridOrderRouter.js';
+import { createZeroExRouter } from './zeroExAdapter.js';
+import { ZeroExOrderValidator } from '../hybrid/ZeroExOrderValidator.js';
+import { KNOWN_TOKENS } from '../hybrid/zeroExTypes.js';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4000;
 
@@ -19,6 +24,10 @@ export const ledger = new Ledger();
 export const engine = new MatchingEngine(ledger);
 export const custody = new MultiChainGateway();
 export const porEngine = new ProofOfReservesEngine(ledger, custody);
+
+// 0x Protocol Hybrid Subsystems
+export const zeroExOrderBook = new ZeroExOrderBook();
+export const hybridRouter = new HybridOrderRouter(engine, zeroExOrderBook);
 
 // Register Core Markets
 engine.registerMarket({
@@ -145,6 +154,57 @@ export const arbitrageRouter = new ArbitrageRouter(engine);
 // Generate Initial Solvency Merkle Tree
 porEngine.generateMerkleSumTree();
 
+// Pre-seed sample 0x Protocol EIP-712 Limit Orders
+async function seedZeroExOrders() {
+  const samplePrivKey = '0x4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d'; // Standard dev key
+  const sampleMaker = '0x90F8bf6A479f320ead074411a4B0e7944Ea8c9C1';
+
+  try {
+    // 0x Ask: Sell TON for USDT (makerToken: TON, takerToken: USDT)
+    const signedAsk = await ZeroExOrderValidator.signOrder(
+      {
+        makerToken: KNOWN_TOKENS.TON.address,
+        takerToken: KNOWN_TOKENS.USDT.address,
+        makerAmount: (100n * 10n ** 9n).toString(), // 100 TON
+        takerAmount: (650n * 10n ** 6n).toString(), // 650 USDT ($6.50/TON)
+        takerTokenFeeAmount: '0',
+        maker: sampleMaker,
+        taker: '0x0000000000000000000000000000000000000000',
+        sender: '0x0000000000000000000000000000000000000000',
+        feeRecipient: '0x0000000000000000000000000000000000000000',
+        pool: '0x0000000000000000000000000000000000000000000000000000000000000000',
+        expiry: (Math.floor(Date.now() / 1000) + 86400 * 7).toString(),
+        salt: '123456789'
+      },
+      samplePrivKey
+    );
+    zeroExOrderBook.addOrder(signedAsk);
+
+    // 0x Bid: Buy TON with USDT (makerToken: USDT, takerToken: TON)
+    const signedBid = await ZeroExOrderValidator.signOrder(
+      {
+        makerToken: KNOWN_TOKENS.USDT.address,
+        takerToken: KNOWN_TOKENS.TON.address,
+        makerAmount: (640n * 10n ** 6n).toString(), // 640 USDT ($6.40/TON)
+        takerAmount: (100n * 10n ** 9n).toString(), // 100 TON
+        takerTokenFeeAmount: '0',
+        maker: sampleMaker,
+        taker: '0x0000000000000000000000000000000000000000',
+        sender: '0x0000000000000000000000000000000000000000',
+        feeRecipient: '0x0000000000000000000000000000000000000000',
+        pool: '0x0000000000000000000000000000000000000000000000000000000000000000',
+        expiry: (Math.floor(Date.now() / 1000) + 86400 * 7).toString(),
+        salt: '987654321'
+      },
+      samplePrivKey
+    );
+    zeroExOrderBook.addOrder(signedBid);
+  } catch (err) {
+    console.error('Failed to pre-seed 0x orders:', err);
+  }
+}
+seedZeroExOrders();
+
 // Express Application Setup
 const app = express();
 app.use(cors());
@@ -153,6 +213,11 @@ app.use(express.json());
 // Attach Binance & Coinbase API Routers
 app.use('/api/v3', createBinanceRouter(engine, ledger));
 app.use('/api/v3/brokerage', createCoinbaseRouter(engine, ledger));
+
+// Attach 0x Protocol SRA and Swap API Routers
+const { sraRouter, swapRouter } = createZeroExRouter(zeroExOrderBook, hybridRouter);
+app.use('/orderbook/v1', sraRouter);
+app.use('/swap/v1', swapRouter);
 
 // Custody & Proof-of-Reserves REST Endpoints
 app.get('/api/custody/wallets', (req: Request, res: Response) => {
@@ -309,7 +374,7 @@ wss.on('connection', (ws: WebSocket) => {
   clients.set(ws, sub);
 
   // Send welcome handshake
-  ws.send(JSON.stringify({ event: 'connected', serverTime: Date.now(), exchange: 'Qmoosa' }));
+  ws.send(JSON.stringify({ event: 'connected', serverTime: Date.now(), exchange: 'Qmoosa Hybrid' }));
 
   ws.on('message', (data: string) => {
     try {
@@ -397,9 +462,11 @@ btcMarketMaker.start();
 // Launch Server if run directly
 if (process.env.NODE_ENV !== 'test') {
   server.listen(PORT, () => {
-    console.log(`[Qmoosa Exchange] Engine core active on http://localhost:${PORT}`);
+    console.log(`[Qmoosa Hybrid Exchange] Engine core active on http://localhost:${PORT}`);
     console.log(`[Binance Adapter] REST API active at http://localhost:${PORT}/api/v3`);
     console.log(`[Coinbase Adapter] REST API active at http://localhost:${PORT}/api/v3/brokerage`);
+    console.log(`[0x Protocol SRA v4] REST API active at http://localhost:${PORT}/orderbook/v1`);
+    console.log(`[0x Protocol Swap API] REST API active at http://localhost:${PORT}/swap/v1`);
     console.log(`[WebSocket Stream] ws://localhost:${PORT}/ws`);
     console.log(`[Proof of Reserves] Merkle Sum Tree Root: ${porEngine.generateSolvencyReport().rootHash}`);
   });

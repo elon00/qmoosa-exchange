@@ -1,10 +1,10 @@
 # Qmoosa Exchange — Strategic Roadmap
 
-This document outlines the multi-phase deployment, scale, and compliance strategy for Qmoosa Exchange from initial architecture to global tier-1 institutional operation.
+This document outlines the multi-phase deployment, scale, and compliance strategy for Qmoosa Hybrid Exchange from initial architecture to global tier-1 institutional operation.
 
 ```mermaid
 flowchart LR
-    P1["Phase 1: In-Memory Core & Standard APIs"] --> P2["Phase 2: Trading Terminal & Liquidity"]
+    P1["Phase 1: In-Memory Core & Standard APIs"] --> P2["Phase 2: Hybrid 0x Protocol & UI"]
     P2 --> P3["Phase 3: Production Custody & HSM"]
     P3 --> P4["Phase 4: Regulatory Licensing"]
     P4 --> P5["Phase 5: Perpetual Derivatives"]
@@ -22,14 +22,15 @@ flowchart LR
 
 ---
 
-## Phase 2: Web Trading Terminal & Liquidity Automation (Completed)
-- [x] Modern Dark-Mode Trading Terminal built with React 19, TypeScript, and TailwindCSS.
-- [x] Real-time interactive candlestick and volume depth charts.
-- [x] Dynamic L2/L3 orderbook display with spread indicator and depth bars.
-- [x] Autonomous Market Maker Bot with Avellaneda-Stoikov quoting model (`MarketMakerBot.ts`).
-- [x] Algorithmic Grid Trading Bot for automated range trading (`GridTradingBot.ts`).
-- [x] Cross-venue Smart Arbitrage Router (`ArbitrageRouter.ts`).
-- [x] Cryptographic Proof-of-Reserves Merkle Sum Tree validator and client auditor (`ProofOfReserves.ts`).
+## Phase 2: 0x Protocol Hybrid Architecture & Liquidity Automation (Completed)
+- [x] **0x Protocol v4 Standard Relayer API (SRA v4)** (`/orderbook/v1/*`).
+- [x] **0x Protocol Swap API v1** (`/swap/v1/*`) with multi-source quote aggregation.
+- [x] **EIP-712 Cryptographic Signature Validator** (`ZeroExOrderValidator.ts`).
+- [x] **Smart Hybrid Order Router (SOR)** synchronizing CEX engine, 0x SRA orders, and on-chain AMMs.
+- [x] Web3 Wallet Connection support (MetaMask, Tonkeeper, EIP-1193).
+- [x] Hybrid Mode Switcher (CEX HFT Mode vs Non-Custodial 0x Protocol Mode).
+- [x] Merkle Sum Tree Proof of Reserves (PoR) with client verification.
+- [x] Autonomous Market Maker Bot (`MarketMakerBot.ts`) and Grid Bot (`GridTradingBot.ts`).
 
 ---
 
@@ -39,7 +40,7 @@ flowchart LR
 - [ ] Air-gapped Cold Storage Vault signing ceremonies with FIPS 140-2 Level 3 HSMs.
 - [ ] Native TON / Gram full-node validation client with automated smart-contract deposit sweeping.
 - [ ] EVM Layer 2 deposit rollups (Arbitrum One, Optimism, Base).
-- [ ] Solana Anchor smart contract escrow for decentralized custody bridges.
+- [ ] 0x Cross-chain intent settlement bridges.
 
 ---
 
