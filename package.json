@@ -1,0 +1,57 @@
+{
+  "name": "qmoosa-exchange",
+  "version": "1.0.0",
+  "description": "Qmoosa Exchange — Next-Gen High-Performance Crypto Exchange (HollaEx / Binance / Coinbase Architecture)",
+  "main": "dist/server.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:server": "tsx src/api/server.ts",
+    "build": "vite build && tsc -p tsconfig.server.json",
+    "build:client": "vite build",
+    "build:server": "tsc -p tsconfig.server.json",
+    "start": "node dist/api/server.js",
+    "test": "tsx --test tests/**/*.test.ts",
+    "bot:mm": "tsx src/automation/run-market-maker.ts"
+  },
+  "keywords": [
+    "crypto-exchange",
+    "matching-engine",
+    "binance",
+    "coinbase",
+    "hollaex",
+    "orderbook",
+    "market-making",
+    "proof-of-reserves",
+    "ton",
+    "web3"
+  ],
+  "author": "Martin Luther (elon00)",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@noble/hashes": "^1.7.1",
+    "clsx": "^2.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "lucide-react": "^0.546.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.13.0",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "@types/ws": "^8.5.14",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.5.2",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0"
+  }
+}
