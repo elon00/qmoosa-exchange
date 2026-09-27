@@ -60,6 +60,14 @@ export class MatchingEngine {
     return this.orderBooks.get(symbol);
   }
 
+  public getOrder(orderId: string): Order | null {
+    for (const book of this.orderBooks.values()) {
+      const order = book.getOrder(orderId);
+      if (order) return order;
+    }
+    return null;
+  }
+
   public getDepth(symbol: string, limit = 20): OrderBookSnapshot | null {
     const book = this.orderBooks.get(symbol);
     return book ? book.getDepth(limit) : null;
@@ -403,22 +411,21 @@ export class MatchingEngine {
   ): Order | null {
     let symbol: string | undefined;
     let orderId: string;
-    let userId: string;
+    let userId: string | undefined;
 
     if (this.orderBooks.has(param1)) {
       // (symbol, orderId, userId)
       symbol = param1;
       orderId = param2!;
-      userId = param3 || 'user_trader1';
+      userId = param3;
     } else if (param2 && this.orderBooks.has(param2)) {
       // (orderId, symbol, userId)
       orderId = param1;
       symbol = param2;
-      userId = param3 || 'user_trader1';
+      userId = param3;
     } else {
-      // (orderId, undefined, userId) - locate book
       orderId = param1;
-      userId = param3 || param2 || 'user_trader1';
+      userId = param2;
       for (const [s, b] of this.orderBooks) {
         if (b.getOrder(orderId)) {
           symbol = s;
@@ -433,7 +440,10 @@ export class MatchingEngine {
     const config = this.marketConfigs.get(symbol)!;
 
     const order = book.getOrder(orderId);
-    if (!order || order.userId !== userId) return null;
+    if (!order) return null;
+    if (userId && order.userId !== userId) {
+      return null;
+    }
 
     book.removeOrder(orderId);
     order.status = 'CANCELLED';

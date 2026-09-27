@@ -2,9 +2,18 @@ import { Router, Request, Response } from 'express';
 import { MatchingEngine } from '../engine/MatchingEngine.js';
 import { Ledger } from '../engine/Ledger.js';
 import { Side, OrderType } from '../engine/types.js';
+import { AuthService } from '../auth/AuthService.js';
 
-export function createBinanceRouter(engine: MatchingEngine, ledger: Ledger): Router {
+export function createBinanceRouter(engine: MatchingEngine, ledger: Ledger, authService?: AuthService): Router {
   const router = Router();
+
+  const extractTokenUserId = (req: Request): string | null => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ')
+      ? authHeader.substring(7)
+      : (req.headers['x-auth-token'] as string);
+    return authService ? authService.getUserIdFromToken(token) : null;
+  };
 
   // GET /api/v3/ping
   router.get('/ping', (_req: Request, res: Response) => {
@@ -218,22 +227,34 @@ export function createBinanceRouter(engine: MatchingEngine, ledger: Ledger): Rou
       type,
       quantity,
       price,
-      userId = 'user_trader1',
       clientOrderId
     } = req.body;
 
+    const tokenUserId = extractTokenUserId(req);
+    let userId = req.body.userId;
+    if (tokenUserId) {
+      if (userId && userId !== tokenUserId) {
+        res.status(403).json({ code: -2015, msg: 'FORBIDDEN_CROSS_ACCOUNT_ACCESS: Token mismatch with userId' });
+        return;
+      }
+      userId = tokenUserId;
+    }
+    if (!userId) {
+      userId = 'user_trader1';
+    }
+
     const symbol = normalizeSymbol(rawSymbol);
     const parsedQty = parseFloat(quantity);
-    const parsedPrice = price ? parseFloat(price) : undefined;
+    const parsedPrice = price !== undefined && price !== null ? parseFloat(price) : undefined;
 
     if (!symbol || !side || !type || isNaN(parsedQty) || parsedQty <= 0) {
-      res.status(400).json({ code: -1102, msg: 'Mandatory parameter missing or malformed' });
+      res.status(400).json({ code: -1102, msg: 'Mandatory parameter missing or malformed (quantity must be > 0)' });
       return;
     }
 
     const orderType = type.toUpperCase() as 'LIMIT' | 'MARKET';
-    if (orderType === 'LIMIT' && (!parsedPrice || parsedPrice <= 0)) {
-      res.status(400).json({ code: -1104, msg: 'Price required for LIMIT orders' });
+    if (orderType === 'LIMIT' && (parsedPrice === undefined || isNaN(parsedPrice) || parsedPrice <= 0)) {
+      res.status(400).json({ code: -1104, msg: 'Price required and must be greater than 0 for LIMIT orders' });
       return;
     }
 
@@ -267,17 +288,39 @@ export function createBinanceRouter(engine: MatchingEngine, ledger: Ledger): Rou
         }))
       });
     } catch (err: any) {
-      res.status(400).json({ code: -2010, msg: err.message || 'Order execution error' });
+      const code = err.message?.includes('Market') ? -1121 : -2010;
+      res.status(400).json({ code, msg: err.message || 'Order execution error' });
     }
   });
 
   // DELETE /api/v3/order
   router.delete('/order', (req: Request, res: Response) => {
-    const { symbol: rawSymbol, orderId, userId = 'user_trader1' } = req.body;
+    const { symbol: rawSymbol, orderId } = req.body;
+
+    const tokenUserId = extractTokenUserId(req);
+    let userId = req.body.userId;
+    if (tokenUserId) {
+      if (userId && userId !== tokenUserId) {
+        res.status(403).json({ code: -2015, msg: 'FORBIDDEN_CROSS_ACCOUNT_ACCESS: Token mismatch with userId' });
+        return;
+      }
+      userId = tokenUserId;
+    }
+    if (!userId) {
+      userId = 'user_trader1';
+    }
+
     const symbol = normalizeSymbol(rawSymbol);
 
     if (!orderId) {
       res.status(400).json({ code: -1102, msg: 'Missing orderId' });
+      return;
+    }
+
+    // Ownership check: if order exists and belongs to someone else, reject with 404
+    const existingOrder = engine.getOrder(orderId);
+    if (existingOrder && existingOrder.userId !== userId) {
+      res.status(404).json({ code: -2011, msg: 'Unknown order or already filled/cancelled' });
       return;
     }
 
@@ -303,7 +346,16 @@ export function createBinanceRouter(engine: MatchingEngine, ledger: Ledger): Rou
 
   // GET /api/v3/openOrders
   router.get('/openOrders', (req: Request, res: Response) => {
-    const userId = (req.query.userId as string) || 'user_trader1';
+    const tokenUserId = extractTokenUserId(req);
+    let queryUserId = req.query.userId as string;
+    if (tokenUserId) {
+      if (queryUserId && queryUserId !== tokenUserId) {
+        res.status(403).json({ code: -2015, msg: 'FORBIDDEN_CROSS_ACCOUNT_ACCESS: Cannot inspect another user\'s orders' });
+        return;
+      }
+      queryUserId = tokenUserId;
+    }
+    const userId = queryUserId || 'user_trader1';
     const rawSymbol = req.query.symbol as string;
     const symbol = rawSymbol ? normalizeSymbol(rawSymbol) : undefined;
 
@@ -326,7 +378,16 @@ export function createBinanceRouter(engine: MatchingEngine, ledger: Ledger): Rou
 
   // GET /api/v3/account
   router.get('/account', (req: Request, res: Response) => {
-    const userId = (req.query.userId as string) || 'user_trader1';
+    const tokenUserId = extractTokenUserId(req);
+    let queryUserId = req.query.userId as string;
+    if (tokenUserId) {
+      if (queryUserId && queryUserId !== tokenUserId) {
+        res.status(403).json({ code: -2015, msg: 'FORBIDDEN_CROSS_ACCOUNT_ACCESS: Cannot inspect another user\'s account' });
+        return;
+      }
+      queryUserId = tokenUserId;
+    }
+    const userId = queryUserId || 'user_trader1';
     const userBalances = ledger.getUserBalances(userId);
 
     const balancesList: any[] = [];

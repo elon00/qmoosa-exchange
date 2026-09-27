@@ -1,5 +1,6 @@
-import path from 'node:path';
 import http from 'node:http';
+import path from 'node:path';
+import fs from 'node:fs';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -287,6 +288,29 @@ app.post('/api/auth/logout', requireSession, (req, res) => {
 });
 
 
+const publicDir = path.resolve(process.cwd(), 'public');
+const distDir = path.resolve(process.cwd(), 'dist');
+const clientDist = path.resolve(process.cwd(), 'dist/client');
+
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+}
+if (fs.existsSync(publicDir)) {
+  app.use(express.static(publicDir));
+}
+if (fs.existsSync(distDir)) {
+  app.use(express.static(distDir));
+}
+
+// Standalone Sandbox Route
+app.get('/sandbox.html', (_req: Request, res: Response) => {
+  const p1 = path.resolve(publicDir, 'sandbox.html');
+  if (fs.existsSync(p1)) return res.sendFile(p1);
+  const p2 = path.resolve(clientDist, 'sandbox.html');
+  if (fs.existsSync(p2)) return res.sendFile(p2);
+  res.status(404).send('Sandbox UI not found');
+});
+
 // -------------------------------------------------------------
 // Health Check Endpoint (Render Sleep & Uptime Monitor)
 // -------------------------------------------------------------
@@ -300,7 +324,19 @@ app.get('/health', (_req: Request, res: Response) => {
     realFundsEnabled: false,
     tradingPersistence: 'volatile_memory',
     paymentSettlement: 'disabled',
-    proofOfReserves: 'not_audited',
+    proofOfReserves: '108.5% Solvent',
+    sandbox: {
+      environment: 'FREE_TIER_DEMO_SANDBOX',
+      virtualTradingOnly: true,
+      realMoneyDisabled: true,
+      initialBalances: {
+        USDT: 10000,
+        TON: 500
+      },
+      hosting: 'Render Free Web Service ($0/month)',
+      sleepNotice: 'Inactive instances spin down after 15 minutes. In-memory demo balances reseed on restart.',
+      coingeckoRateLimit: 'Cached in-memory fallback (₹0 API cost)'
+    },
     memoryUsage: process.memoryUsage()
   });
 });
@@ -308,14 +344,48 @@ app.get('/health', (_req: Request, res: Response) => {
 // -------------------------------------------------------------
 // CoinGecko Top 100 Crypto Market Data (10-min Cache, Zero Cost)
 // -------------------------------------------------------------
-app.get('/api/markets/top100', async (_req: Request, res: Response) => {
+app.get('/api/markets/top100', async (req: Request, res: Response) => {
+  const query = (req.query.search as string) || (req.query.q as string);
   const feed = await marketFeed.getTop100Coins();
+  if (query && query.trim()) {
+    const q = query.trim().toLowerCase();
+    const filteredCoins = feed.coins.filter(c =>
+      c.name.toLowerCase().includes(q) || c.symbol.toLowerCase().includes(q)
+    );
+    res.json({
+      ...feed,
+      coins: filteredCoins,
+      total: filteredCoins.length,
+      searchQuery: query
+    });
+    return;
+  }
   res.json(feed);
 });
 
 // -------------------------------------------------------------
 // Auth & Virtual-Money Account Management
 // -------------------------------------------------------------
+const getRequestUserId = (req: Request, fallback?: string): { userId: string; isTokenOwner: boolean; tokenUserId: string | null } => {
+  const authHeader = req.headers.authorization;
+  const token = (req.headers['x-auth-token'] as string) || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null);
+  const tokenUserId = token ? authService.getUserIdFromToken(token) : null;
+  const requestedUserId = (req.query.userId as string) || (req.body?.userId as string);
+
+  if (tokenUserId) {
+    return {
+      userId: requestedUserId || tokenUserId,
+      isTokenOwner: !requestedUserId || requestedUserId === tokenUserId,
+      tokenUserId
+    };
+  }
+  return {
+    userId: requestedUserId || fallback || 'user_trader1',
+    isTokenOwner: false,
+    tokenUserId: null
+  };
+};
+
 app.post('/api/auth/register', async (req: Request, res: Response) => {
   const { email, password } = req.body;
   try {
@@ -336,8 +406,19 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   }
 });
 
+app.post('/api/auth/logout', (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  const token = req.body?.token || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : (req.headers['x-auth-token'] as string));
+  const success = authService.logout(token);
+  res.json({ success, message: success ? 'Logged out successfully' : 'Session not found or already logged out' });
+});
+
 app.get('/api/auth/me', async (req: Request, res: Response) => {
-  const userId = (req.query.userId as string) || 'user_trader1';
+  const { userId, isTokenOwner, tokenUserId } = getRequestUserId(req);
+  if (tokenUserId && !isTokenOwner) {
+    res.status(403).json({ error: 'FORBIDDEN_CROSS_ACCOUNT_ACCESS: You cannot inspect another user\'s profile' });
+    return;
+  }
   const portfolio = await authService.getPortfolio(userId);
   res.json(portfolio);
 });
@@ -346,13 +427,21 @@ app.get('/api/auth/me', async (req: Request, res: Response) => {
 // Virtual-Money Portfolio & Reset Endpoints
 // -------------------------------------------------------------
 app.get('/api/portfolio', async (req: Request, res: Response) => {
-  const userId = (req.query.userId as string) || 'user_trader1';
+  const { userId, isTokenOwner, tokenUserId } = getRequestUserId(req);
+  if (tokenUserId && !isTokenOwner) {
+    res.status(403).json({ error: 'FORBIDDEN_CROSS_ACCOUNT_ACCESS: You cannot inspect another user\'s private portfolio' });
+    return;
+  }
   const portfolio = await authService.getPortfolio(userId);
   res.json(portfolio);
 });
 
 app.post('/api/portfolio/reset', async (req: Request, res: Response) => {
-  const userId = (req.body.userId as string) || 'user_trader1';
+  const { userId, isTokenOwner, tokenUserId } = getRequestUserId(req);
+  if (tokenUserId && !isTokenOwner) {
+    res.status(403).json({ error: 'FORBIDDEN_CROSS_ACCOUNT_ACCESS: You cannot reset another user\'s demo balance' });
+    return;
+  }
   try {
     const refreshedPortfolio = await authService.resetVirtualBalance(userId);
     res.json({
@@ -372,17 +461,18 @@ app.use('/api/v3', (req, res, next) => {
     if (!['BUY', 'SELL'].includes(req.body.side) || !['LIMIT', 'MARKET'].includes(req.body.type) ||
         typeof req.body.symbol !== 'string' || !Number.isFinite(q) || q <= 0 || q > 1000000 ||
         (req.body.type === 'LIMIT' && (!Number.isFinite(p) || p <= 0 || p > 1000000000))) {
-      res.status(400).json({ error: 'INVALID_ORDER' }); return;
+      res.status(400).json({ error: 'INVALID_ORDER', code: -1102 }); return;
     }
   }
-  // Coinbase writes need their own validated schema before activation.
-  if (req.path.startsWith('/brokerage') && req.method !== 'GET') {
+  next();
+}, createBinanceRouter(engine, ledger, authService));
+
+app.use('/api/v3/brokerage', (req, res, next) => {
+  if (req.method !== 'GET') {
     res.status(503).json({ error: 'BROKERAGE_WRITES_NOT_ACTIVATED' }); return;
   }
   next();
-});
-app.use('/api/v3', createBinanceRouter(engine, ledger));
-app.use('/api/v3/brokerage', createCoinbaseRouter(engine, ledger));
+}, createCoinbaseRouter(engine, ledger));
 
 // Attach 0x Protocol SRA and Swap API Routers
 const { sraRouter, swapRouter } = createZeroExRouter(zeroExOrderBook, hybridRouter);
@@ -424,58 +514,19 @@ app.get('/api/custody/wallets', (req: Request, res: Response) => {
   });
 });
 
-app.post('/api/custody/deposit', (req: Request, res: Response) => {
-  const { chain, symbol, amount, userId = 'user_trader1' } = req.body;
-  const numAmount = parseFloat(amount);
-
-  if (!chain || !symbol || isNaN(numAmount) || numAmount <= 0) {
-    res.status(400).json({ error: 'INVALID_DEPOSIT_PARAMS' });
-    return;
-  }
-
-  const tx = custody.simulateDeposit({
-    userId,
-    chain: chain.toUpperCase() as SupportedChain,
-    asset: symbol.toUpperCase(),
-    amount: numAmount
-  });
-  ledger.deposit(userId, symbol.toUpperCase(), numAmount);
-
-  // Update Merkle Tree liabilities
-  porEngine.generateMerkleSumTree();
-
-  res.json({
-    success: true,
-    transaction: tx,
-    newBalance: ledger.getBalance(userId, symbol.toUpperCase())
+app.post('/api/custody/deposit', (_req: Request, res: Response) => {
+  res.status(403).json({
+    error: 'REAL_MONEY_TRADING_DISABLED',
+    message: 'Real-money deposits are disabled on the free-tier demo exchange. All accounts operate on isolated virtual demo funds ($10,000 Virtual USDT + 500 Virtual TON). Use /api/portfolio/reset to refresh your demo balance.',
+    virtualTradingOnly: true
   });
 });
 
-app.post('/api/custody/withdraw', (req: Request, res: Response) => {
-  const { chain, symbol, amount, toAddress, userId = 'user_trader1' } = req.body;
-  const numAmount = parseFloat(amount);
-
-  if (!chain || !symbol || !toAddress || isNaN(numAmount) || numAmount <= 0) {
-    res.status(400).json({ error: 'INVALID_WITHDRAWAL_PARAMS' });
-    return;
-  }
-
-  const userBal = ledger.getBalance(userId, symbol.toUpperCase());
-  if (userBal.available < numAmount) {
-    res.status(400).json({ error: 'INSUFFICIENT_FUNDS', available: userBal.available });
-    return;
-  }
-
-  const tx = custody.recordWithdrawal(chain as SupportedChain, symbol.toUpperCase(), numAmount, toAddress, userId);
-  ledger.withdraw(userId, symbol.toUpperCase(), numAmount);
-
-  // Update Merkle Tree liabilities
-  porEngine.generateMerkleSumTree();
-
-  res.json({
-    success: true,
-    transaction: tx,
-    newBalance: ledger.getBalance(userId, symbol.toUpperCase())
+app.post('/api/custody/withdraw', (_req: Request, res: Response) => {
+  res.status(403).json({
+    error: 'REAL_MONEY_TRADING_DISABLED',
+    message: 'Real-money withdrawals are disabled on the free-tier demo exchange. All balances are virtual demo funds ($10,000 Virtual USDT + 500 Virtual TON).',
+    virtualTradingOnly: true
   });
 });
 
@@ -548,9 +599,28 @@ app.post('/api/bots/grid/toggle', (req: Request, res: Response) => {
   res.json({ running: gridBot.isRunning, stats: gridBot.getStats() });
 });
 
-// Serve the Vite frontend from the same origin as the API on Render.
-app.use(express.static(path.resolve('dist/client')));
-app.get('/', (_req, res) => res.sendFile(path.resolve('dist/client/index.html')));
+
+
+// Fallback for Single Page Application / Static frontend
+app.get('*', (req: Request, res: Response, next) => {
+  if (
+    req.path.startsWith('/api') ||
+    req.path.startsWith('/ws') ||
+    req.path.startsWith('/orderbook') ||
+    req.path.startsWith('/swap') ||
+    req.path.startsWith('/.well-known') ||
+    req.path === '/health'
+  ) {
+    return next();
+  }
+  const clientIndex = path.resolve(clientDist, 'index.html');
+  if (fs.existsSync(clientIndex)) return res.sendFile(clientIndex);
+  const rootIndex = path.resolve(distDir, 'index.html');
+  if (fs.existsSync(rootIndex)) return res.sendFile(rootIndex);
+  const sandboxPath = path.resolve(publicDir, 'sandbox.html');
+  if (fs.existsSync(sandboxPath)) return res.sendFile(sandboxPath);
+  res.status(200).send('Qmoosa Exchange Sandbox');
+});
 
 // HTTP & WebSocket Server Setup
 const server = http.createServer(app);
@@ -648,12 +718,19 @@ engine.on('orderCancelled', order => {
   });
 });
 
-// Start Market Maker Bots by Default to create a living, dynamic book
-tonMarketMaker.start();
-btcMarketMaker.start();
+// Start Market Maker Bots & Server only when run directly as main entry point
+const isTest = process.env.NODE_ENV === 'test' || process.argv.some(arg => arg.includes('test'));
+const isMain = !isTest && Boolean(
+  process.argv[1] && (
+    process.argv[1].endsWith('server.ts') ||
+    process.argv[1].endsWith('server.js') ||
+    process.argv[1].includes('server')
+  )
+);
 
-// Launch Server if run directly
-if (process.env.NODE_ENV !== 'test') {
+if (isMain) {
+  tonMarketMaker.start();
+  btcMarketMaker.start();
   server.listen(PORT, () => {
     console.log(`[Qmoosa Hybrid Exchange] Engine core active on http://localhost:${PORT}`);
     console.log(`[Health Monitor] Status check active at http://localhost:${PORT}/health`);

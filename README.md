@@ -252,6 +252,70 @@ curl -X GET "http://localhost:4000/api/custody/reserves"
 
 ---
 
+## 🚀 Free-Tier Demo Exchange & Evaluator Sandbox ($0/Month Hosting)
+
+Qmoosa Exchange is configured and deployed as a **₹0 Free-Tier Usable Demo Sandbox** on Render's Free Web Service. Both the frontend trading terminal and backend matching engine are served from a single unified Node service with zero paid resources or subscriptions.
+
+### 🌐 Live Deployment URLs
+- **Interactive Evaluator Sandbox**: [https://qmoosa-exchange.onrender.com/sandbox.html](https://qmoosa-exchange.onrender.com/sandbox.html) *(Local: `http://localhost:4000/sandbox.html`)*
+- **Web Trading Terminal**: [https://qmoosa-exchange.onrender.com/](https://qmoosa-exchange.onrender.com/) *(GitHub Pages Mirror: [https://elon00.github.io/qmoosa-exchange/](https://elon00.github.io/qmoosa-exchange/))*
+- **Health & Sandbox Status**: [https://qmoosa-exchange.onrender.com/health](https://qmoosa-exchange.onrender.com/health)
+- **Top 100 CoinGecko Screener**: [https://qmoosa-exchange.onrender.com/api/markets/top100](https://qmoosa-exchange.onrender.com/api/markets/top100)
+
+> [!NOTE]
+> **Free-Tier Sleep & Lifecycle Behavior**:
+> Render free instances enter sleep mode after **15 minutes of inactivity**. The first incoming request will wake the container within 30–50 seconds. In-memory demo balances ($10k USDT + 500 TON) and orderbooks reseed cleanly on container restart.
+> 
+> **Zero Real-Money Trading**:
+> Real on-chain custody deposits and withdrawals are strictly disabled with HTTP `403 REAL_MONEY_TRADING_DISABLED`. All accounts operate on isolated virtual demo funds. Users can replenish demo funds anytime using `/api/portfolio/reset`.
+
+---
+
+## 🛡️ Dual-Account Security & 7 Verification Gates
+
+The repository includes a dedicated automated acceptance suite (`tests/freeTierAcceptance.test.ts`) verifying all 7 mandatory gates:
+
+| Verification Gate | Requirement | Status | Evidence |
+| :--- | :--- | :---: | :--- |
+| **Check 1: Free Tier Status** | `GET /health` returns 200 OK + JSON describing sandbox environment, ₹0 limits, and sleep notices | ✅ PASS | Verified via acceptance test suite |
+| **Check 2: Multi-Account Isolation** | Two distinct accounts register with independent $10k USDT + 500 TON virtual balances, supporting login/logout session tokens | ✅ PASS | Verified via acceptance test suite |
+| **Check 3: Cross-Account Security** | User B cannot cancel User A's orders; User B cannot inspect User A's private portfolio or open orders | ✅ PASS | Returns HTTP 403 `FORBIDDEN_CROSS_ACCOUNT_ACCESS` |
+| **Check 4: Order Lifecycle & Invariants** | User A places limit order -> funds locked -> listed in open orders -> canceled -> funds unlocked (zero-sum conservation) | ✅ PASS | Verified via acceptance test suite |
+| **Check 5: Bad Input Rejection** | Negative prices, zero/negative quantities, and non-existent pairs are rejected cleanly with HTTP 400 | ✅ PASS | Codes `-1102`, `-1104`, `-1121` |
+| **Check 6: Real-Money Custody Assertion** | Real deposit/withdraw calls return clear disabled status (403), never fake mock successes | ✅ PASS | Returns `403 REAL_MONEY_TRADING_DISABLED` |
+| **Check 7: Market Screener Integrity** | Top 100 CoinGecko coins load, query search works, and cached fallback flag guarantees ₹0 API cost | ✅ PASS | In-memory cache + fallback dataset |
+
+Run all 34 acceptance and subsystem tests locally without any paid API keys:
+```bash
+npm test
+```
+
+---
+
+## 🛠️ Deployment, Troubleshooting & Rollback
+
+### Render Free-Tier Web Service Deployment
+1. Connect repository `elon00/qmoosa-exchange` to [Render Dashboard](https://dashboard.render.com).
+2. Apply `render.yaml` (Free Web Service, Node runtime, `$0/month`).
+3. Set build command: `npm ci && npm run build`
+4. Set start command: `npm start`
+5. Environment variables: `NODE_ENV=production`, `PORT=4000`.
+
+### Troubleshooting
+- **Container sleeping**: If the first request times out or takes ~40s, this is Render's free tier spinning up the container. Wait a few seconds and refresh.
+- **Port Conflict**: Server listens on `PORT` environment variable or defaults to `4000`.
+- **Demo Balance Reset**: Call `POST /api/portfolio/reset` with `{ "userId": "<your-user-id>" }` to restore $10,000 Virtual USDT and 500 Virtual TON.
+
+### Rollback Strategy
+If any regression occurs:
+```bash
+git checkout <previous-commit-hash>
+npm test
+git push origin main --force
+```
+
+---
+
 ## 🛡️ License & Acknowledgements
 
 - **License**: [Apache-2.0](LICENSE)

@@ -11,6 +11,8 @@ export interface UserPortfolio {
     asset: string;
     free: number;
     locked: number;
+    available: number;
+    reserved: number;
     total: number;
     priceUsd: number;
     valueUsd: number;
@@ -19,6 +21,12 @@ export interface UserPortfolio {
 
 export class AuthService {
   private sessions = new Map<string, { userId: string; expires: number }>();
+
+  constructor(
+    private db: DbAdapter,
+    private ledger: Ledger
+  ) {}
+
   private issueSession(userId: string): string {
     for (const [token, session] of this.sessions) {
       if (session.expires <= Date.now()) this.sessions.delete(token);
@@ -27,7 +35,9 @@ export class AuthService {
     this.sessions.set(token, { userId, expires: Date.now() + 8 * 60 * 60 * 1000 });
     return token;
   }
-  public authenticate(token: string): string | null {
+
+  public authenticate(token?: string): string | null {
+    if (!token) return null;
     const session = this.sessions.get(token);
     if (!session || session.expires <= Date.now()) {
       this.sessions.delete(token);
@@ -35,12 +45,17 @@ export class AuthService {
     }
     return session.userId;
   }
-  public logout(token: string): void { this.sessions.delete(token); }
 
-  constructor(
-    private db: DbAdapter,
-    private ledger: Ledger
-  ) {}
+  public getUserIdFromToken(token?: string): string | null {
+    return this.authenticate(token);
+  }
+
+  public logout(token: string): boolean {
+    if (!token) return false;
+    const exists = this.sessions.has(token);
+    this.sessions.delete(token);
+    return exists;
+  }
 
   private hashPassword(password: string, salt: string): string {
     return pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
@@ -189,6 +204,8 @@ export class AuthService {
         asset,
         free: b.available,
         locked: b.reserved,
+        available: b.available,
+        reserved: b.reserved,
         total: totalAmount,
         priceUsd: price,
         valueUsd: Number(valueUsd.toFixed(2))
