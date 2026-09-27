@@ -20,7 +20,13 @@ import {
   Globe,
   Key,
   Zap,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Search,
+  Star,
+  User,
+  LogOut,
+  Sparkles,
+  BarChart3
 } from 'lucide-react';
 
 interface Market {
@@ -32,6 +38,20 @@ interface Market {
   high24h: number;
   low24h: number;
   volume24h: number;
+}
+
+interface Top100Coin {
+  id: string;
+  symbol: string;
+  name: string;
+  image: string;
+  current_price: number;
+  market_cap: number;
+  market_cap_rank: number;
+  total_volume: number;
+  price_change_percentage_24h: number;
+  isTradable: boolean;
+  tradingPair?: string;
 }
 
 interface OrderBookLevel {
@@ -69,7 +89,21 @@ export default function App() {
   const [orderType, setOrderType] = useState<'LIMIT' | 'MARKET'>('LIMIT');
   const [price, setPrice] = useState<string>('6.4500');
   const [quantity, setQuantity] = useState<string>('50');
-  const [activeTab, setActiveTab] = useState<'orders' | 'history' | 'balances' | 'zeroex'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'history' | 'balances' | 'zeroex' | 'top100'>('orders');
+
+  // User Auth & Virtual Money State
+  const [currentUser, setCurrentUser] = useState<{ email: string; isDemo: boolean } | null>({
+    email: 'demo_trader@qmoosa.exchange',
+    isDemo: true
+  });
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('register');
+  const [authEmail, setAuthEmail] = useState<string>('');
+  const [authPassword, setAuthPassword] = useState<string>('');
+
+  // Top 100 Market Search & Favourites
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [favouriteCoins, setFavouriteCoins] = useState<Set<string>>(new Set(['bitcoin', 'the-open-network', 'ethereum', 'solana']));
 
   // Web3 Wallet state (0x Protocol Non-Custodial)
   const [walletConnected, setWalletConnected] = useState<boolean>(false);
@@ -86,13 +120,13 @@ export default function App() {
   const [showBotModal, setShowBotModal] = useState<boolean>(false);
   const [showZeroExModal, setShowZeroExModal] = useState<boolean>(false);
 
-  // Balances (CEX Account)
+  // Balances (Virtual Demo CEX Account)
   const [balances, setBalances] = useState<Record<string, { available: number; reserved: number }>>({
-    USDT: { available: 45000.0, reserved: 5000.0 },
-    TON: { available: 4800.0, reserved: 200.0 },
-    BTC: { available: 1.45, reserved: 0.05 },
-    ETH: { available: 14.5, reserved: 0.5 },
-    SOL: { available: 145.0, reserved: 5.0 }
+    USDT: { available: 10000.0, reserved: 0.0 },
+    TON: { available: 500.0, reserved: 0.0 },
+    BTC: { available: 0.0, reserved: 0.0 },
+    ETH: { available: 0.0, reserved: 0.0 },
+    SOL: { available: 0.0, reserved: 0.0 }
   });
 
   // Solvency / PoR data
@@ -151,6 +185,168 @@ export default function App() {
     }
   ];
 
+  // Top 100 Coins Sample Dataset (CoinGecko Feed compatible)
+  const top100Coins: Top100Coin[] = [
+    {
+      id: 'bitcoin',
+      symbol: 'btc',
+      name: 'Bitcoin',
+      image: 'https://assets.coingecko.com/coins/images/1/large/bitcoin.png',
+      current_price: 64280.5,
+      market_cap: 1267490000000,
+      market_cap_rank: 1,
+      total_volume: 34120000000,
+      price_change_percentage_24h: -0.85,
+      isTradable: true,
+      tradingPair: 'BTC-USDT'
+    },
+    {
+      id: 'ethereum',
+      symbol: 'eth',
+      name: 'Ethereum',
+      image: 'https://assets.coingecko.com/coins/images/279/large/ethereum.png',
+      current_price: 3485.2,
+      market_cap: 419200000000,
+      market_cap_rank: 2,
+      total_volume: 18520000000,
+      price_change_percentage_24h: 1.65,
+      isTradable: true,
+      tradingPair: 'ETH-USDT'
+    },
+    {
+      id: 'tether',
+      symbol: 'usdt',
+      name: 'Tether USDT',
+      image: 'https://assets.coingecko.com/coins/images/325/large/Tether.png',
+      current_price: 1.0,
+      market_cap: 118400000000,
+      market_cap_rank: 3,
+      total_volume: 58200000000,
+      price_change_percentage_24h: 0.02,
+      isTradable: true,
+      tradingPair: 'TON-USDT'
+    },
+    {
+      id: 'binancecoin',
+      symbol: 'bnb',
+      name: 'BNB',
+      image: 'https://assets.coingecko.com/coins/images/825/large/bnb-icon2_2x.png',
+      current_price: 578.4,
+      market_cap: 84200000000,
+      market_cap_rank: 4,
+      total_volume: 1120000000,
+      price_change_percentage_24h: 1.12,
+      isTradable: false
+    },
+    {
+      id: 'solana',
+      symbol: 'sol',
+      name: 'Solana',
+      image: 'https://assets.coingecko.com/coins/images/4128/large/solana.png',
+      current_price: 154.8,
+      market_cap: 72100000000,
+      market_cap_rank: 5,
+      total_volume: 4890000000,
+      price_change_percentage_24h: 5.12,
+      isTradable: true,
+      tradingPair: 'SOL-USDT'
+    },
+    {
+      id: 'the-open-network',
+      symbol: 'ton',
+      name: 'Toncoin (Gram)',
+      image: 'https://assets.coingecko.com/coins/images/17980/large/ton_symbol.png',
+      current_price: 6.452,
+      market_cap: 16450000000,
+      market_cap_rank: 8,
+      total_volume: 385000000,
+      price_change_percentage_24h: 3.42,
+      isTradable: true,
+      tradingPair: 'TON-USDT'
+    },
+    {
+      id: 'ripple',
+      symbol: 'xrp',
+      name: 'XRP',
+      image: 'https://assets.coingecko.com/coins/images/44/large/xrp-symbol-white-128.png',
+      current_price: 0.584,
+      market_cap: 32900000000,
+      market_cap_rank: 7,
+      total_volume: 1420000000,
+      price_change_percentage_24h: -1.24,
+      isTradable: false
+    },
+    {
+      id: 'dogecoin',
+      symbol: 'doge',
+      name: 'Dogecoin',
+      image: 'https://assets.coingecko.com/coins/images/5/large/dogecoin.png',
+      current_price: 0.124,
+      market_cap: 18100000000,
+      market_cap_rank: 9,
+      total_volume: 980000000,
+      price_change_percentage_24h: 2.85,
+      isTradable: false
+    },
+    {
+      id: 'cardano',
+      symbol: 'ada',
+      name: 'Cardano',
+      image: 'https://assets.coingecko.com/coins/images/975/large/cardano.png',
+      current_price: 0.385,
+      market_cap: 13800000000,
+      market_cap_rank: 10,
+      total_volume: 420000000,
+      price_change_percentage_24h: -0.45,
+      isTradable: false
+    },
+    {
+      id: 'usd-coin',
+      symbol: 'usdc',
+      name: 'USDC',
+      image: 'https://assets.coingecko.com/coins/images/6319/large/USD_Coin_icon.png',
+      current_price: 1.0,
+      market_cap: 35400000000,
+      market_cap_rank: 6,
+      total_volume: 8400000000,
+      price_change_percentage_24h: 0.01,
+      isTradable: false
+    },
+    {
+      id: 'avalanche-2',
+      symbol: 'avax',
+      name: 'Avalanche',
+      image: 'https://assets.coingecko.com/coins/images/12559/large/Avalanche_Circle_RedWhite_Trans.png',
+      current_price: 28.5,
+      market_cap: 11400000000,
+      market_cap_rank: 11,
+      total_volume: 510000000,
+      price_change_percentage_24h: 3.12,
+      isTradable: false
+    },
+    {
+      id: 'chainlink',
+      symbol: 'link',
+      name: 'Chainlink',
+      image: 'https://assets.coingecko.com/coins/images/877/large/chainlink-new-logo.png',
+      current_price: 12.4,
+      market_cap: 7520000000,
+      market_cap_rank: 13,
+      total_volume: 290000000,
+      price_change_percentage_24h: 1.45,
+      isTradable: false
+    }
+  ];
+
+  const filteredCoins = useMemo(() => {
+    return top100Coins.filter(c => {
+      const matchSearch =
+        c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.symbol.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchSearch;
+    });
+  }, [searchQuery]);
+
   const currentMarket = useMemo(() => {
     return markets.find(m => m.symbol === selectedMarket) || markets[0];
   }, [selectedMarket]);
@@ -187,6 +383,16 @@ export default function App() {
   // Bot states
   const [mmBotActive, setMmBotActive] = useState<boolean>(true);
   const [gridBotActive, setGridBotActive] = useState<boolean>(false);
+
+  // Portfolio total valuation calculation
+  const totalPortfolioValueUsd = useMemo(() => {
+    let sum = balances.USDT.available + balances.USDT.reserved;
+    sum += (balances.TON.available + balances.TON.reserved) * 6.452;
+    sum += (balances.BTC.available + balances.BTC.reserved) * 64280.5;
+    sum += (balances.ETH.available + balances.ETH.reserved) * 3485.2;
+    sum += (balances.SOL.available + balances.SOL.reserved) * 154.8;
+    return sum;
+  }, [balances]);
 
   // Initialize and simulate live market updates
   useEffect(() => {
@@ -288,7 +494,6 @@ export default function App() {
     const totalCost = effectivePrice * numQty;
 
     if (tradingMode === 'DEX_ZERO_EX') {
-      // 0x Protocol Non-Custodial Mode (EIP-712 Sign & Settle)
       if (!walletConnected) {
         setWalletConnected(true);
       }
@@ -315,7 +520,6 @@ export default function App() {
 
       setOpenOrders(prev => [new0xOrder, ...prev]);
 
-      // Deduct from Web3 self-custody wallet
       if (orderSide === 'BUY') {
         setWalletBalances(prev => ({
           ...prev,
@@ -334,10 +538,10 @@ export default function App() {
       return;
     }
 
-    // CEX Mode (Internal matching engine)
+    // CEX Mode (Virtual Demo Balance)
     if (orderSide === 'BUY') {
       if (balances[quoteAsset].available < totalCost) {
-        alert(`Insufficient ${quoteAsset} balance in CEX account!`);
+        alert(`Insufficient Virtual ${quoteAsset} balance! Click "Reset Demo" to restore $10,000 USDT.`);
         return;
       }
       setBalances(prev => ({
@@ -349,7 +553,7 @@ export default function App() {
       }));
     } else {
       if (balances[baseAsset].available < numQty) {
-        alert(`Insufficient ${baseAsset} balance in CEX account!`);
+        alert(`Insufficient Virtual ${baseAsset} balance!`);
         return;
       }
       setBalances(prev => ({
@@ -428,6 +632,37 @@ export default function App() {
     }, 800);
   };
 
+  const handleResetDemoBalance = () => {
+    setBalances({
+      USDT: { available: 10000.0, reserved: 0.0 },
+      TON: { available: 500.0, reserved: 0.0 },
+      BTC: { available: 0.0, reserved: 0.0 },
+      ETH: { available: 0.0, reserved: 0.0 },
+      SOL: { available: 0.0, reserved: 0.0 }
+    });
+    alert('✅ Demo Balance Reset! $10,000 Virtual USDT + 500 Virtual TON credited.');
+  };
+
+  const handleAuthSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authEmail) return;
+    setCurrentUser({
+      email: authEmail,
+      isDemo: true
+    });
+    setShowAuthModal(false);
+    alert(`Welcome, ${authEmail}! $10,000 Virtual Demo Trading Grant is active.`);
+  };
+
+  const toggleFavourite = (coinId: string) => {
+    setFavouriteCoins(prev => {
+      const next = new Set(prev);
+      if (next.has(coinId)) next.delete(coinId);
+      else next.add(coinId);
+      return next;
+    });
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-[#0b0e14] text-[#eaecef]">
       {/* Top Navigation Bar */}
@@ -495,67 +730,41 @@ export default function App() {
             ))}
           </div>
 
-          {/* Ticker Stats Bar */}
-          <div className="hidden xl:flex items-center space-x-6 text-xs border-l border-[#1e2329] pl-4">
-            <div>
-              <div className="text-[10px] text-gray-500 font-medium">Last Price</div>
-              <div
-                className={`font-mono font-bold text-sm ${
-                  currentMarket.change24h >= 0 ? 'text-[#0ecb81]' : 'text-[#f6465d]'
-                }`}
-              >
-                ${currentMarket.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-              </div>
-            </div>
-
-            <div>
-              <div className="text-[10px] text-gray-500 font-medium">24h Change</div>
-              <div
-                className={`font-mono font-semibold flex items-center ${
-                  currentMarket.change24h >= 0 ? 'text-[#0ecb81]' : 'text-[#f6465d]'
-                }`}
-              >
-                {currentMarket.change24h >= 0 ? '+' : ''}
-                {currentMarket.change24h}%
-              </div>
-            </div>
-
-            <div>
-              <div className="text-[10px] text-gray-500 font-medium">24h Volume ({currentMarket.baseAsset})</div>
-              <div className="font-mono text-gray-300">{currentMarket.volume24h.toLocaleString()}</div>
-            </div>
-          </div>
+          {/* Top 100 Markets Quick Toggle */}
+          <button
+            onClick={() => setActiveTab('top100')}
+            className={`hidden md:flex items-center space-x-1 px-2.5 py-1 text-xs font-bold rounded border ${
+              activeTab === 'top100'
+                ? 'bg-blue-600 border-blue-400 text-white'
+                : 'bg-[#181d27] border-[#262d3d] text-gray-300 hover:text-white'
+            }`}
+          >
+            <BarChart3 className="w-3.5 h-3.5 text-blue-400" />
+            <span>Top 100 Crypto</span>
+          </button>
         </div>
 
         {/* Right Action Center */}
         <div className="flex items-center space-x-2.5">
-          {/* 0x Protocol Architecture Modal Trigger */}
-          <button
-            onClick={() => setShowZeroExModal(true)}
-            className="flex items-center space-x-1 px-2.5 py-1 bg-cyan-950/60 border border-cyan-500/40 text-cyan-300 rounded-md text-xs font-semibold hover:bg-cyan-900/50 transition cursor-pointer"
-          >
-            <Layers className="w-3.5 h-3.5 text-cyan-400" />
-            <span>0x SRA & SOR</span>
-          </button>
-
-          {/* Proof of Reserves Pill */}
-          <button
-            onClick={() => setShowPoRModal(true)}
-            className="hidden md:flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 rounded-md text-xs font-semibold hover:bg-emerald-900/50 transition cursor-pointer"
-          >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>PoR: 108.5%</span>
-          </button>
-
-          {/* Bot Control Center */}
-          <button
-            onClick={() => setShowBotModal(true)}
-            className="hidden lg:flex items-center space-x-1.5 px-2.5 py-1 bg-indigo-950/60 border border-indigo-500/40 text-indigo-300 rounded-md text-xs font-semibold hover:bg-indigo-900/50 transition cursor-pointer"
-          >
-            <Bot className="w-3.5 h-3.5" />
-            <span>Bots</span>
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5"></span>
-          </button>
+          {/* User Demo Profile / Login */}
+          <div className="flex items-center space-x-1.5 bg-[#181d27] px-2.5 py-1 rounded-lg border border-[#2b313a]">
+            <User className="w-3.5 h-3.5 text-yellow-400" />
+            <div className="text-right">
+              <div className="text-[10px] text-gray-400 font-mono">
+                {currentUser ? currentUser.email.split('@')[0] : 'Guest'}
+              </div>
+              <div className="text-xs font-bold font-mono text-emerald-400">
+                ${totalPortfolioValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+            <button
+              onClick={handleResetDemoBalance}
+              title="Reset Demo Balance to $10,000"
+              className="ml-1 px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 border border-yellow-500/40 rounded text-[9px] font-bold hover:bg-yellow-500/30"
+            >
+              Reset $10k
+            </button>
+          </div>
 
           {/* Web3 Wallet Connect Button */}
           <button
@@ -568,8 +777,17 @@ export default function App() {
           >
             <Key className="w-3.5 h-3.5" />
             <span>
-              {walletConnected ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Connect Web3'}
+              {walletConnected ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Web3 Wallet'}
             </span>
+          </button>
+
+          {/* Proof of Reserves Pill */}
+          <button
+            onClick={() => setShowPoRModal(true)}
+            className="hidden lg:flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 rounded-md text-xs font-semibold hover:bg-emerald-900/50 transition cursor-pointer"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>PoR: 108.5%</span>
           </button>
 
           {/* Deposit / Vault */}
@@ -583,26 +801,20 @@ export default function App() {
         </div>
       </header>
 
-      {/* Mode Banner */}
-      <div
-        className={`px-4 py-1 text-xs font-mono flex items-center justify-between border-b ${
-          tradingMode === 'DEX_ZERO_EX'
-            ? 'bg-emerald-950/40 border-emerald-900/40 text-emerald-300'
-            : 'bg-amber-950/20 border-yellow-900/30 text-yellow-300/80'
-        }`}
-      >
+      {/* Mode & Free-Tier Notice Banner */}
+      <div className="px-4 py-1 text-xs font-mono flex items-center justify-between border-b bg-[#121824] border-[#1e2638] text-gray-300">
         <div className="flex items-center space-x-2">
-          <span className="w-2 h-2 rounded-full bg-current animate-ping"></span>
-          <span>
-            {tradingMode === 'DEX_ZERO_EX'
-              ? 'NON-CUSTODIAL 0x PROTOCOL ACTIVE: Orders signed via EIP-712. Funds never leave your self-custody wallet until on-chain settlement.'
-              : 'HIGH-FREQUENCY CEX ENGINE ACTIVE: Sub-millisecond matching, zero gas fee limit orders, high-depth liquidity.'}
+          <span className="px-1.5 py-0.2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded text-[10px] font-bold">
+            FREE TIER DEMO ACTIVE
+          </span>
+          <span className="text-[11px] text-gray-400">
+            Virtual-Money Trading on Primary Pairs (TON, BTC, ETH, SOL) • Live CoinGecko Cached Feed (10-min TTL)
           </span>
         </div>
         <div className="hidden md:flex items-center space-x-3 text-[11px] text-gray-400">
           <span>0x Exchange Proxy: 0xdef1...25eff</span>
           <span>•</span>
-          <span>SOR: Uniswap v3 + STON.fi + CEX OrderBook</span>
+          <span>Deployments: GitHub Pages + Netlify</span>
         </div>
       </div>
 
@@ -613,7 +825,7 @@ export default function App() {
           {/* Chart Header Bar */}
           <div className="h-10 border-b border-[#1e2329] bg-[#12161f]/80 px-4 flex items-center justify-between text-xs">
             <div className="flex items-center space-x-2">
-              <span className="font-bold text-gray-200">Price Chart</span>
+              <span className="font-bold text-gray-200">Price Chart ({currentMarket.symbol})</span>
               <div className="flex space-x-1 bg-[#1a202c] p-0.5 rounded text-[11px]">
                 <button className="px-2 py-0.5 rounded bg-[#2d3748] text-yellow-400 font-semibold">1m</button>
                 <button className="px-2 py-0.5 rounded text-gray-400 hover:text-white">5m</button>
@@ -684,7 +896,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Bottom Tabs: Open Orders / Balances / History / 0x SRA */}
+          {/* Bottom Tabs: Open Orders / Balances / History / Top 100 / 0x SRA */}
           <div className="flex-1 flex flex-col bg-[#10141d]">
             <div className="h-9 border-b border-[#1e2329] bg-[#12161f] flex items-center px-4 space-x-6 text-xs font-semibold">
               <button
@@ -715,7 +927,18 @@ export default function App() {
                     : 'border-transparent text-gray-400 hover:text-gray-200'
                 }`}
               >
-                Assets & Custody
+                Portfolio Assets
+              </button>
+              <button
+                onClick={() => setActiveTab('top100')}
+                className={`py-2 transition border-b-2 flex items-center space-x-1 ${
+                  activeTab === 'top100'
+                    ? 'border-blue-400 text-blue-400'
+                    : 'border-transparent text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                <Sparkles className="w-3 h-3 text-blue-400" />
+                <span>Top 100 Cryptos</span>
               </button>
               <button
                 onClick={() => setActiveTab('zeroex')}
@@ -725,12 +948,100 @@ export default function App() {
                     : 'border-transparent text-gray-400 hover:text-gray-200'
                 }`}
               >
-                0x SRA Relayer Orders
+                0x SRA Orders
               </button>
             </div>
 
             {/* Tab Contents */}
             <div className="p-3 flex-1 overflow-y-auto font-mono text-xs">
+              {activeTab === 'top100' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-[#1e2329]">
+                    <div className="relative w-72">
+                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search top coins (e.g. TON, BTC, ETH)..."
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        className="w-full bg-[#181d27] border border-[#2b313a] rounded-lg pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-yellow-500"
+                      />
+                    </div>
+                    <div className="text-[11px] text-gray-400">
+                      Attribution: Data provided by <strong>CoinGecko Public Demo API</strong> (10-min Cache)
+                    </div>
+                  </div>
+
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="text-gray-500 border-b border-[#1e2329] pb-1">
+                        <th className="font-normal py-1 w-8">#</th>
+                        <th className="font-normal py-1">Name</th>
+                        <th className="font-normal py-1">Price (USD)</th>
+                        <th className="font-normal py-1">24h Change</th>
+                        <th className="font-normal py-1">Market Cap</th>
+                        <th className="font-normal py-1">24h Volume</th>
+                        <th className="font-normal py-1 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredCoins.map(coin => (
+                        <tr key={coin.id} className="border-b border-[#161a22] hover:bg-[#161c28]">
+                          <td className="py-2 text-gray-500">{coin.market_cap_rank}</td>
+                          <td className="py-2">
+                            <div className="flex items-center space-x-2">
+                              <button
+                                onClick={() => toggleFavourite(coin.id)}
+                                className="text-gray-600 hover:text-yellow-400"
+                              >
+                                <Star
+                                  className={`w-3.5 h-3.5 ${
+                                    favouriteCoins.has(coin.id) ? 'fill-yellow-400 text-yellow-400' : ''
+                                  }`}
+                                />
+                              </button>
+                              <img src={coin.image} alt={coin.name} className="w-4 h-4 rounded-full" />
+                              <span className="font-bold text-white">{coin.name}</span>
+                              <span className="text-[10px] text-gray-400 uppercase">{coin.symbol}</span>
+                            </div>
+                          </td>
+                          <td className="py-2 font-bold text-white">${coin.current_price.toLocaleString()}</td>
+                          <td className="py-2">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                coin.price_change_percentage_24h >= 0
+                                  ? 'bg-emerald-950 text-emerald-400'
+                                  : 'bg-rose-950 text-rose-400'
+                              }`}
+                            >
+                              {coin.price_change_percentage_24h >= 0 ? '+' : ''}
+                              {coin.price_change_percentage_24h}%
+                            </span>
+                          </td>
+                          <td className="py-2 text-gray-400">${(coin.market_cap / 1e9).toFixed(2)}B</td>
+                          <td className="py-2 text-gray-400">${(coin.total_volume / 1e6).toFixed(1)}M</td>
+                          <td className="py-2 text-right">
+                            {coin.isTradable && coin.tradingPair ? (
+                              <button
+                                onClick={() => {
+                                  setSelectedMarket(coin.tradingPair!);
+                                  setActiveTab('orders');
+                                }}
+                                className="px-2.5 py-1 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded text-[10px] cursor-pointer"
+                              >
+                                Trade {coin.symbol.toUpperCase()}
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-gray-500">View Only</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
               {activeTab === 'orders' && (
                 <div className="w-full">
                   <table className="w-full text-left">
@@ -749,7 +1060,7 @@ export default function App() {
                       {openOrders.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="text-center py-6 text-gray-500">
-                            No active orders
+                            No active demo orders
                           </td>
                         </tr>
                       ) : (
@@ -764,7 +1075,7 @@ export default function App() {
                                     : 'bg-amber-950 text-amber-400 border border-amber-500/40'
                                 }`}
                               >
-                                {o.executionMode === '0x_EIP712' ? '0x Non-Custodial' : 'CEX Custodial'}
+                                {o.executionMode === '0x_EIP712' ? '0x Non-Custodial' : 'Virtual CEX'}
                               </span>
                             </td>
                             <td className="py-2 font-bold">{o.symbol}</td>
@@ -843,11 +1154,21 @@ export default function App() {
               {activeTab === 'balances' && (
                 <div className="space-y-4">
                   <div>
-                    <div className="text-xs font-bold text-gray-300 mb-2">Centralized Vault Accounts:</div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-xs font-bold text-gray-300">
+                        Virtual Money Portfolio Valuation:
+                      </div>
+                      <button
+                        onClick={handleResetDemoBalance}
+                        className="px-2.5 py-1 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded text-xs"
+                      >
+                        Reset Demo to $10,000 USDT
+                      </button>
+                    </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {Object.entries(balances).map(([asset, bal]) => (
                         <div key={asset} className="p-3 bg-[#161a24] rounded-lg border border-[#232a3b]">
-                          <div className="text-xs font-bold text-yellow-400 mb-1">{asset} CEX Vault</div>
+                          <div className="text-xs font-bold text-yellow-400 mb-1">{asset} Balance</div>
                           <div className="text-sm font-bold text-white">{bal.available.toLocaleString()}</div>
                           <div className="text-[11px] text-gray-400">Locked: {bal.reserved.toLocaleString()}</div>
                         </div>
@@ -1055,7 +1376,7 @@ export default function App() {
                 {/* Available Balance Preview */}
                 <div className="pt-1 text-xs flex justify-between text-gray-400 font-mono">
                   <span>
-                    {tradingMode === 'DEX_ZERO_EX' ? 'Web3 Wallet Balance:' : 'CEX Balance:'}
+                    {tradingMode === 'DEX_ZERO_EX' ? 'Web3 Wallet Balance:' : 'Virtual Demo Balance:'}
                   </span>
                   <span className="text-white font-bold">
                     {tradingMode === 'DEX_ZERO_EX'
@@ -1109,13 +1430,13 @@ export default function App() {
                 >
                   {tradingMode === 'DEX_ZERO_EX'
                     ? `Sign 0x EIP-712 ${orderSide === 'BUY' ? 'Buy' : 'Sell'}`
-                    : `${orderSide === 'BUY' ? 'Buy' : 'Sell'} ${currentMarket.baseAsset} (CEX)`}
+                    : `${orderSide === 'BUY' ? 'Buy' : 'Sell'} ${currentMarket.baseAsset} (Virtual CEX)`}
                 </button>
               </form>
             </div>
 
             <div className="text-[10px] text-gray-500 text-center font-mono pt-2">
-              0x Protocol v4 Settlement: 0xdef1...25eff • Zero Gas for Signed Limit Orders
+              Virtual Trading Active • Free Demo Account • Zero Real Loss Risk
             </div>
           </div>
         </div>
