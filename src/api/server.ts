@@ -22,6 +22,10 @@ import { CoinGeckoFeed } from '../market/CoinGeckoFeed.js';
 import { X402Gateway } from '../x402/X402Gateway.js';
 import { X402ServiceManager } from '../x402/X402Services.js';
 import { createX402Router } from './x402Adapter.js';
+import { PqcEngine } from '../pqc/PqcEngine.js';
+import { MultimodalEngine } from '../multimodal/MultimodalEngine.js';
+import { AgenticOrchestrator } from '../agentics/AgenticOrchestrator.js';
+import { createPqcMultimodalAgentRouter } from './pqcMultimodalAgentRouter.js';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4000;
 
@@ -50,6 +54,18 @@ export const x402ServiceManager = new X402ServiceManager(
   hybridRouter,
   zeroExOrderBook,
   marketFeed
+);
+
+// NIST Post-Quantum (PQC), Multimodal AI & Autonomous Agentics Subsystems
+export const pqcEngine = new PqcEngine();
+export const multimodalEngine = new MultimodalEngine();
+export const agenticOrchestrator = new AgenticOrchestrator(
+  engine,
+  ledger,
+  hybridRouter,
+  pqcEngine,
+  multimodalEngine,
+  x402ServiceManager
 );
 
 // Register Core Markets
@@ -324,6 +340,9 @@ app.get('/.well-known/x402.json', (_req: Request, res: Response) => {
   res.json(x402ServiceManager.getBazaarManifest());
 });
 app.use('/api/v1/x402', createX402Router(x402Gateway, x402ServiceManager));
+
+// Attach NIST PQC, Multimodal AI & Autonomous Agentics Routers
+app.use('/api/v1', createPqcMultimodalAgentRouter(pqcEngine, multimodalEngine, agenticOrchestrator));
 
 // Custody & Proof-of-Reserves REST Endpoints
 app.get('/api/custody/wallets', (req: Request, res: Response) => {
