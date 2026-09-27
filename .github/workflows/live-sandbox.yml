@@ -1,5 +1,8 @@
 name: Verify live sandbox
 on:
+  push:
+    branches: [main]
+    paths: [scripts/check-live.mjs, scripts/live-acceptance.mjs, .github/workflows/live-sandbox.yml]
   workflow_dispatch:
   schedule:
     - cron: '17 7 * * 1'
@@ -18,6 +21,8 @@ jobs:
           node-version: 22
       - name: Verify deployed sandbox without moving funds
         run: node scripts/check-live.mjs | tee live-report.json
+      - name: Verify live virtual order lifecycle
+        run: node scripts/live-acceptance.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
