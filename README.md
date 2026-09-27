@@ -1,3 +1,9 @@
+> **Current safety status: SANDBOX ONLY.** Earlier claims below about audited
+> reserves, live AI profits, x402 settlement or fully activated exchange features
+> are not verified. Unsafe public operations are disabled. Start with the
+> [free-tier activation blueprint](docs/FREE_TIER_ACTIVATION.md) and the connected
+> `/sandbox.html` dashboard on the backend origin. Trading state is still volatile.
+
 <div align="center">
 
 # ⚡ QMOOSA HYBRID EXCHANGE ⚡

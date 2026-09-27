@@ -1,4 +1,4 @@
-import { pbkdf2Sync, randomBytes } from 'node:crypto';
+import { pbkdf2Sync, randomBytes, timingSafeEqual } from 'node:crypto';
 import { DbAdapter, DbUser } from '../database/DbAdapter.js';
 import { Ledger } from '../engine/Ledger.js';
 
@@ -18,6 +18,25 @@ export interface UserPortfolio {
 }
 
 export class AuthService {
+  private sessions = new Map<string, { userId: string; expires: number }>();
+  private issueSession(userId: string): string {
+    for (const [token, session] of this.sessions) {
+      if (session.expires <= Date.now()) this.sessions.delete(token);
+    }
+    const token = randomBytes(32).toString('hex');
+    this.sessions.set(token, { userId, expires: Date.now() + 8 * 60 * 60 * 1000 });
+    return token;
+  }
+  public authenticate(token: string): string | null {
+    const session = this.sessions.get(token);
+    if (!session || session.expires <= Date.now()) {
+      this.sessions.delete(token);
+      return null;
+    }
+    return session.userId;
+  }
+  public logout(token: string): void { this.sessions.delete(token); }
+
   constructor(
     private db: DbAdapter,
     private ledger: Ledger
@@ -31,6 +50,7 @@ export class AuthService {
    * Register a new user with $10,000 Virtual USDT + 500 Virtual TON demo funds
    */
   public async register(email: string, password: string): Promise<{ user: Omit<DbUser, 'passwordHash'>; token: string }> {
+    if (typeof email !== 'string' || typeof password !== 'string' || password.length > 256) throw new Error('Invalid credentials');
     const normalizedEmail = email.trim().toLowerCase();
     if (!normalizedEmail || !password || password.length < 6) {
       throw new Error('Email must be valid and password must be at least 6 characters');
@@ -62,7 +82,7 @@ export class AuthService {
     await this.db.saveBalance(userId, 'USDT', 10000, 0);
     await this.db.saveBalance(userId, 'TON', 500, 0);
 
-    const token = `demo_tok_${userId}_${Date.now()}`;
+    const token = this.issueSession(userId);
     return {
       user: {
         id: newUser.id,
@@ -78,6 +98,7 @@ export class AuthService {
    * Authenticate an existing user
    */
   public async login(email: string, password: string): Promise<{ user: Omit<DbUser, 'passwordHash'>; token: string }> {
+    if (typeof email !== 'string' || typeof password !== 'string' || password.length > 256) throw new Error('Invalid credentials');
     const normalizedEmail = email.trim().toLowerCase();
     const user = await this.db.getUserByEmail(normalizedEmail);
     if (!user) {
@@ -87,11 +108,11 @@ export class AuthService {
     const [salt, originalHash] = user.passwordHash.split(':');
     const computedHash = this.hashPassword(password, salt);
 
-    if (computedHash !== originalHash) {
+    if (computedHash.length !== originalHash.length || !timingSafeEqual(Buffer.from(computedHash, 'hex'), Buffer.from(originalHash, 'hex'))) {
       throw new Error('Invalid email or password');
     }
 
-    const token = `demo_tok_${user.id}_${Date.now()}`;
+    const token = this.issueSession(user.id);
     return {
       user: {
         id: user.id,
@@ -111,6 +132,8 @@ export class AuthService {
     if (!user) {
       throw new Error('User not found');
     }
+
+    if ([...this.ledger.getUserBalances(userId).values()].some(b => b.reserved > 0)) throw new Error('Cancel open orders before reset');
 
     // Reset ledger balances
     const userBals = this.ledger.getUserBalances(userId);

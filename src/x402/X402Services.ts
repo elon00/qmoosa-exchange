@@ -191,8 +191,7 @@ export class X402ServiceManager {
 
     const currentBal = this.ledger.getBalance(params.payer, requiredAsset);
     if (currentBal.available < requiredAmount) {
-      // In x402 agent mode, the micro-fee has been paid; allocate necessary execution liquidity
-      this.ledger.deposit(params.payer, requiredAsset, requiredAmount * 1.5, `x402_agent_collateral_${params.receiptId}`);
+      throw new Error('INSUFFICIENT_COLLATERAL: a service fee does not fund a trade');
     }
 
     // Place and execute in matching engine
@@ -245,13 +244,15 @@ export class X402ServiceManager {
   public getPoRAttestation(payer: string) {
     const report = this.porEngine.generateSolvencyReport();
     return {
-      solvencyStatus: report.isFullySolvent ? '100% FULLY SOLVENT & AUDITED' : 'RESERVE DEFICIT',
+      solvencyStatus: report.isFullySolvent ? 'SIMULATED_RESERVES_NOT_AUDITED' : 'RESERVE DEFICIT',
       timestamp: report.timestamp,
       rootHash: report.rootHash,
       totalLiabilities: report.liabilities,
       totalReserves: report.reserves,
       solvencyRatios: report.solvencyRatio,
-      attestationSignature: `por_sig_${Buffer.from(report.rootHash).toString('base64').slice(0, 32)}`
+      attestationSignature: null,
+      audited: false,
+      simulation: true
     };
   }
 }

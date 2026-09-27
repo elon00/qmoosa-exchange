@@ -1,39 +1,8 @@
 {
-  "$schema": "https://x402.org/schema/v2/bazaar.json",
-  "x402Version": 2,
-  "name": "Qmoosa Hybrid Exchange & Liquidity Router",
-  "category": "0x Protocol v4 Hybrid Exchange, Smart Order Routing & x402 Agent Commerce",
-  "description": "Institutional-grade hybrid crypto exchange featuring 0x Protocol v4, EIP-712 orders, high-speed matching engine, and x402 pay-per-request agent endpoints.",
-  "provider": {
-    "name": "Qmoosa Exchange Core Team (elon00)",
-    "website": "https://elon00.github.io/qmoosa-exchange",
-    "github": "https://github.com/elon00/qmoosa-exchange"
-  },
-  "meshNodeId": "qmoosa-exchange",
-  "synchronizedAt": "2026-09-27T12:00:00.000Z",
-  "bazaarManifest": "https://elon00.github.io/qmoosa-exchange/.well-known/x402-bazaar.json",
-  "paymentRoutes": {
-    "solana": {
-      "chain": "solana",
-      "caip2": "solana:4uhcVJyU9pJkvQyS88uRDiswHXSCkY3z",
-      "currency": "USDC",
-      "payTo": "BPshPrMazV7qunhcq18AvCHjSceHbKytiRDNrtCv68g3",
-      "tokenMint": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
-      "name": "Solana Testnet"
-    },
-    "evm": {
-      "chain": "evm",
-      "caip2": "eip155:97",
-      "currency": "USDT",
-      "payTo": "0x89205A3A3b2A69De6Dbf7f01ED13B2108B2c43e7",
-      "name": "BNB Smart Chain Testnet / EVM"
-    },
-    "ton": {
-      "chain": "ton",
-      "caip2": "ton:-239",
-      "currency": "GRAM",
-      "payTo": "UQAJO_hgYMZq3ULuzFv7927z-WgsM0BApc0IRniDrHORTzm3",
-      "name": "TON Mainnet (Gram)"
-    }
-  }
+  "name": "Qmoosa sandbox",
+  "status": "disabled",
+  "reason": "Verified payment settlement is not configured",
+  "services": [],
+  "paymentRoutes": {},
+  "realFundsEnabled": false
 }
